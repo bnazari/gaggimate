@@ -1,5 +1,7 @@
 @import 'tailwindcss';
-@plugin 'daisyui';
+/* @plugin 'daisyui'; */
+@plugin 'daisyui' { themes: emerald; }
+
 
 /* https://daisyui.com/theme-generator/#theme=eJx9kutuozAQhV8FIa20K5WRPca3vg2BoUElENmgbbvad18HR8WJs_mHmfP5nBnPn3JqTlS-luPwdlzKl7KqXNMNq688jdQusws17uiUlvqBxi78ZyDvKof5I9X74YvSixigvKntN-2Fw-w62mzPH9uPjs7L8SLaTtM8eLqe2nmcXeXbI931EAuHxlPFGQul-X1sjz_D94-CFezXvQgTkdVQKxV0wDgvUFowiBkhUkIAKhMJVaBC0JJnRDtPC03LN1VzMCb6SBF8ZPCpU2qidXHNuKe3oHgE1AXQoG5trkDmZARYFDEfPgKHqZ93tQGOelMbWSCvQXKZqv3atuT9DjCobb0BWhc8zM-gSIHfjZuG6W2fF17EIYqVoGuVSsm5bVOiUAtgV3F4icv96j521iwP3aGMzeon8XNQBbPrK8onbTxyNCL2z2yhOdQ6aymH6vCY0Q3xQW9nN5wa9_mtlwrisoRF2Z5Q3ph4CgZdCtQIUvJtdioMzyAIYVOkCWNIAoU9t8JuessLISRwzR8kyjqxHITGuMf8WbR8Lw3EhEzg_xPmo-NgTRydMGnSjvpmHYNwcSu9lGdHPTkfrN_L174ZPf39B95wXy4 */
 @plugin "daisyui/theme" {
@@ -36,6 +38,7 @@
   --depth: 0;
   --noise: 0;
 }
+
 
 /* https://daisyui.com/theme-generator/#theme=eJx9lOtunDAQhV8FIVVqpTDy3SZv44Whi8LCygY1SdV3r8GbxSxsfiF7zuc5cxF_895eMH_Na-ve8pe8KJyt28kXHjusxsGFEHV4SUNNi10d7gnIh8hpeE_1vv3E9CECTG5i60tr4DS4Gpe01_flosbreJ5Fy6kfWo-3UzV0gyt8dcZtCfH-ZD0WlJAQGd666vyTEdDK_MgIEF5mTEnQUvx6JFhC0BI4FZHQTwmeEhqMioB4ClRDP2I_3iEjgEq-UOQwTY_T6Gy3VqKhFGVMowIwfw_0-0QSpCnXRI9c2zfDXawMCClnMRUmY1yHIdFU7aeqQu_vgJ4BtgCcZdRQKOkG-GNd3_a_VzscmLgBZWYYlDKVo3PL2txep6BNtKMzyoFS82h9Vy8J8owceN4pqQQVG8PUN9b3nAIl4k4x_aSEPSSAS_21Jftarq69WPexli6DnsY-zZNgoNR2EhhS1CkShkdoRGRAtIKSb1bKhj4kljQDrmJzVcZlcCaOLB31jeiv8r9ztic5KMJiE-hzh0fNE_rGydRqjY2duiBsbOfxJb86bND55a_wOroJ__0HJmJeGw */
 @plugin "daisyui/theme" {
@@ -600,4 +603,11 @@ html[data-theme='coffee'] {
   @media (min-height: 429px) {
     @slot;
   }
+}
+
+[data-theme='emerald'] {
+  --color-primary: #007944;
+  --color-primary-content: #ffffff;
+  --color-success: #007944; 
+  --color-success-content: #ffffff;
 }

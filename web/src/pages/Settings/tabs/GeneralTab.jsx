@@ -4,6 +4,7 @@ import { faEyeSlash } from '@fortawesome/free-solid-svg-icons/faEyeSlash';
 import { timezones } from '../../../config/zones.js';
 import { DASHBOARD_LAYOUTS } from '../../../utils/dashboardManager.js';
 import Section from '../../../components/Card.jsx';
+import { handleThemeChange, getAvailableThemes } from '../../../utils/themeManager';
 import {
   InputGroupField,
   SettingsFormField,

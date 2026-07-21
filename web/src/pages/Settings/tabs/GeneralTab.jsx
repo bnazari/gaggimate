@@ -316,11 +316,9 @@ export function GeneralTab({
                 handleThemeChange(e);
               }}
             >
-              <option value='system'>System</option>
-              <option value='light'>Light</option>
-              <option value='dark'>Dark</option>
-              <option value='coffee'>Coffee</option>
-              <option value='nord'>Nord</option>
+              {getAvailableThemes().map(t => (
+                <option value={t.value}>{t.label}</option>
+              ))}
             </select>
           </SettingsFormField>
           <SettingsFormField label='Dashboard Layout' htmlFor='dashboardLayout' noMargin>

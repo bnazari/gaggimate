@@ -29,8 +29,8 @@ class MachinePanel {
     void onKeyUp(SDL_Keycode key);
 
     // Scripted input (--script): one tap. Latching: toggle. Momentary: press,
-    // auto-released ~200ms later by render().
-    void tap(SDL_Keycode key);
+    // auto-released after holdMs (default ~200ms) by render().
+    void tap(SDL_Keycode key, uint32_t holdMs = 0);
 
     // Draw the panel; offsetX is where the panel starts inside the window.
     void render(SDL_Renderer *r, int offsetX, uint32_t nowMs);

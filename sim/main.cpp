@@ -20,6 +20,7 @@ Controller controller;
 struct ScriptEvent {
     SDL_Keycode key;
     unsigned long atMs;
+    unsigned long holdMs = 0; // 0 = default tap
     bool fired = false;
 };
 static ScriptEvent s_script[32];
@@ -31,7 +32,13 @@ static void parseScript(const char *arg) {
         const char key = *p++;
         if (*p == '@') {
             p++;
-            s_script[s_scriptLen++] = {(SDL_Keycode)key, strtoul(p, (char **)&p, 10)};
+            const unsigned long at = strtoul(p, (char **)&p, 10);
+            unsigned long hold = 0;
+            if (*p == ':') {
+                p++;
+                hold = strtoul(p, (char **)&p, 10);
+            }
+            s_script[s_scriptLen++] = {(SDL_Keycode)key, at, hold};
         }
         if (*p == ',')
             p++;
@@ -103,7 +110,7 @@ int main(int argc, char **argv) {
         for (int i = 0; i < s_scriptLen; i++) {
             if (!s_script[i].fired && millis() - start >= s_script[i].atMs) {
                 s_script[i].fired = true;
-                MachinePanel::getInstance()->tap(s_script[i].key);
+                MachinePanel::getInstance()->tap(s_script[i].key, s_script[i].holdMs);
             }
         }
 

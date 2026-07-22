@@ -255,7 +255,7 @@ void MachinePanel::onKeyUp(SDL_Keycode key) {
         setSwitch(i, false);
 }
 
-void MachinePanel::tap(SDL_Keycode key) {
+void MachinePanel::tap(SDL_Keycode key, uint32_t holdMs) {
     if (key == SDLK_v) {
         toggleValve();
         return;
@@ -263,7 +263,7 @@ void MachinePanel::tap(SDL_Keycode key) {
     if (const int i = keyToSwitch(key); i >= 0) {
         if (isMomentary()) {
             setSwitch(i, true);
-            tapRelease[i] = SDL_GetTicks() + 200;
+            tapRelease[i] = SDL_GetTicks() + (holdMs ? holdMs : 200);
         } else {
             toggleSwitch(i);
         }

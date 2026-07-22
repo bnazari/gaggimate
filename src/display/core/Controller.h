@@ -204,6 +204,7 @@ class Controller {
     unsigned long lastPing = 0;
     unsigned long lastProgress = 0;
     unsigned long lastAction = 0;
+    unsigned long brewBtnPressMs = 0; // momentary long-press (flush) tracking
     bool loaded = false;
     bool updating = false;
     bool autotuning = false;

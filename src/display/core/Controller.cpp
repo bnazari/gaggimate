@@ -278,6 +278,33 @@ void Controller::setupBluetooth() {
             return;
         }
         if (behavior == "brew") {
+            // Momentary mode: distinguish tap from long press. The press edge is
+            // deferred to the release so a long press (>= threshold) can run a
+            // flush instead of the normal brew action. Latching switches keep
+            // the stock edge-driven behavior (a held rocker is not a "press").
+            if (settings.isMomentaryButtons()) {
+                constexpr unsigned long LONG_PRESS_MS = 800;
+                if (status) {
+                    brewBtnPressMs = millis();
+                    return;
+                }
+                const unsigned long held = millis() - brewBtnPressMs;
+                brewBtnPressMs = 0;
+                if (held >= LONG_PRESS_MS) {
+                    // Same sequence the dedicated "flush" button behavior uses.
+                    if (getMode() == MODE_STANDBY) {
+                        deactivateStandby();
+                    }
+                    if (getMode() != MODE_BREW && !isActive()) {
+                        setMode(MODE_BREW);
+                    }
+                    onFlush();
+                    return;
+                }
+                handleBrewButton(1); // tap: normal press action on release
+                handleBrewButton(0); // no-op in momentary mode, keeps state sane
+                return;
+            }
             handleBrewButton(status);
             return;
         }

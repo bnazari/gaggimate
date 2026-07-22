@@ -48,6 +48,7 @@ class GaggiMateController {
     Pump *pump = nullptr;
     DigitalInput *brewBtn = nullptr;
     DigitalInput *steamBtn = nullptr;
+    DigitalInput *waterBtn = nullptr; // third switch on ext4 (Silvia water rocker)
     PressureSensor *pressureSensor = nullptr;
     LedController *ledController = nullptr;
     DistanceSensor *distanceSensor = nullptr;

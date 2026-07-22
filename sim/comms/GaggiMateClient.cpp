@@ -1,6 +1,9 @@
 #include "GaggiMateClient.h"
 
+GaggiMateClient *GaggiMateClient::_simInstance = nullptr;
+
 GaggiMateClient::GaggiMateClient() {
+    _simInstance = this;
     // Forward the mock's telemetry to whatever the firmware registered.
     _mock.onSensor = [this](float t, float p, float pf, float mf, float pr, float pp, float hp) {
         if (_sensorCb)

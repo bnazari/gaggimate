@@ -1,5 +1,6 @@
 #include "SdlDriver.h"
 
+#include "../machine/MachinePanel.h"
 #include <SDL.h>
 #include <cstdlib>
 #include <lvgl.h>
@@ -10,6 +11,9 @@ SdlDriver *SdlDriver::instance = nullptr;
 // The LilyGo T-RGB panel the default UI targets is 480x480.
 static constexpr int DISP_W = 480;
 static constexpr int DISP_H = 480;
+// Total window: round display on the left, simulated machine panel on the right.
+static constexpr int WIN_W = DISP_W + MachinePanel::WIDTH;
+static constexpr int WIN_H = DISP_H;
 
 static SDL_Window *s_window = nullptr;
 static SDL_Renderer *s_renderer = nullptr;
@@ -46,7 +50,7 @@ void SdlDriver::init() {
         exit(1);
     }
     s_window =
-        SDL_CreateWindow("GaggiMate Simulator", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DISP_W, DISP_H, SDL_WINDOW_SHOWN);
+        SDL_CreateWindow("GaggiMate Simulator", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIN_W, WIN_H, SDL_WINDOW_SHOWN);
     s_renderer = SDL_CreateRenderer(s_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     s_texture = SDL_CreateTexture(s_renderer, SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STREAMING, DISP_W, DISP_H);
 
@@ -95,19 +99,34 @@ void SdlDriver::pumpAndRender() {
             s_quit = true;
             break;
         case SDL_MOUSEMOTION:
-            s_mouseX = e.motion.x;
-            s_mouseY = e.motion.y;
+            if (e.motion.x < DISP_W) {
+                s_mouseX = e.motion.x;
+                s_mouseY = e.motion.y;
+            }
             break;
         case SDL_MOUSEBUTTONDOWN:
             if (e.button.button == SDL_BUTTON_LEFT) {
-                s_mousePressed = true;
-                s_mouseX = e.button.x;
-                s_mouseY = e.button.y;
+                if (e.button.x < DISP_W) {
+                    s_mousePressed = true;
+                    s_mouseX = e.button.x;
+                    s_mouseY = e.button.y;
+                } else {
+                    MachinePanel::getInstance()->onMouseDown(e.button.x - DISP_W, e.button.y);
+                }
             }
             break;
+        case SDL_KEYDOWN:
+            if (!e.key.repeat)
+                MachinePanel::getInstance()->onKeyDown(e.key.keysym.sym);
+            break;
+        case SDL_KEYUP:
+            MachinePanel::getInstance()->onKeyUp(e.key.keysym.sym);
+            break;
         case SDL_MOUSEBUTTONUP:
-            if (e.button.button == SDL_BUTTON_LEFT)
+            if (e.button.button == SDL_BUTTON_LEFT) {
                 s_mousePressed = false;
+                MachinePanel::getInstance()->onMouseUp();
+            }
             break;
         default:
             break;
@@ -115,8 +134,10 @@ void SdlDriver::pumpAndRender() {
     }
     SDL_SetRenderDrawColor(s_renderer, BEZEL_R, BEZEL_G, BEZEL_B, 0xFF);
     SDL_RenderClear(s_renderer);
-    SDL_RenderCopy(s_renderer, s_texture, nullptr, nullptr);
-    SDL_RenderCopy(s_renderer, s_mask, nullptr, nullptr); // round off the corners
+    const SDL_Rect dispRect{0, 0, DISP_W, DISP_H};
+    SDL_RenderCopy(s_renderer, s_texture, nullptr, &dispRect);
+    SDL_RenderCopy(s_renderer, s_mask, nullptr, &dispRect); // round off the corners
+    MachinePanel::getInstance()->render(s_renderer, DISP_W, SDL_GetTicks());
     SDL_RenderPresent(s_renderer);
 }
 
@@ -125,9 +146,11 @@ bool SdlDriver::shouldQuit() const { return s_quit; }
 void SdlDriver::screenshot(const char *path) {
     SDL_SetRenderDrawColor(s_renderer, BEZEL_R, BEZEL_G, BEZEL_B, 0xFF);
     SDL_RenderClear(s_renderer);
-    SDL_RenderCopy(s_renderer, s_texture, nullptr, nullptr);
-    SDL_RenderCopy(s_renderer, s_mask, nullptr, nullptr); // round off the corners
-    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, DISP_W, DISP_H, 16, SDL_PIXELFORMAT_RGB565);
+    const SDL_Rect dispRect{0, 0, DISP_W, DISP_H};
+    SDL_RenderCopy(s_renderer, s_texture, nullptr, &dispRect);
+    SDL_RenderCopy(s_renderer, s_mask, nullptr, &dispRect); // round off the corners
+    MachinePanel::getInstance()->render(s_renderer, DISP_W, SDL_GetTicks());
+    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, WIN_W, WIN_H, 16, SDL_PIXELFORMAT_RGB565);
     if (surface) {
         SDL_RenderReadPixels(s_renderer, nullptr, SDL_PIXELFORMAT_RGB565, surface->pixels, surface->pitch);
         SDL_SaveBMP(surface, path);

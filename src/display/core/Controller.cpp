@@ -1212,7 +1212,8 @@ void Controller::handleBrewButton(int brewButtonStatus) {
             }
             break;
         case MODE_WATER:
-            activate();
+            deactivate();
+            setMode(MODE_BREW);
             break;
         case MODE_STEAM:
             deactivate();

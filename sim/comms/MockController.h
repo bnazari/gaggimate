@@ -21,6 +21,25 @@ class MockController {
     void setRelay(const RelayCommand &c);
     void tareScale() { weight = 0.0f; }
 
+    // --- Simulator machine panel hooks -------------------------------------
+    // The Silvia's steam/hot-water wand valve is manual: the firmware never
+    // sees it, it only changes where water/steam physically goes.
+    void setWandValve(bool open) { wandValveOpen = open; }
+
+    struct SimMachineState {
+        float temperature;  // boiler °C
+        float targetTemp;   // setpoint (0 = boiler off)
+        float pressure;     // bar
+        float flow;         // ml/s
+        bool pumpActive;    // display is driving the pump
+        bool brewValveOpen; // 3-way solenoid routing to group head
+        bool wandValveOpen; // manual wand valve
+    };
+    SimMachineState getSimState() const {
+        const bool pumpActive = pumpPower > 1.0f || targetPressure > 0.1f || targetFlow > 0.1f;
+        return {temperature, targetTemp, pressure, flow, pumpActive, brewValveOpen, wandValveOpen};
+    }
+
     SensorFn onSensor;
     VolumetricFn onVolumetric;
     TofFn onTof;
@@ -40,6 +59,7 @@ class MockController {
     float targetPressure = 0.0f; // bar
     float targetFlow = 0.0f;     // ml/s
     bool brewValveOpen = false;
+    bool wandValveOpen = false;
 
     float pressure = 0.0f; // bar
     float flow = 0.0f;     // ml/s

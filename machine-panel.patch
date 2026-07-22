@@ -1,0 +1,674 @@
+diff --git a/sim/comms/GaggiMateClient.cpp b/sim/comms/GaggiMateClient.cpp
+index cfe7a994..ea9de134 100644
+--- a/sim/comms/GaggiMateClient.cpp
++++ b/sim/comms/GaggiMateClient.cpp
+@@ -1,6 +1,9 @@
+ #include "GaggiMateClient.h"
+ 
++GaggiMateClient *GaggiMateClient::_simInstance = nullptr;
++
+ GaggiMateClient::GaggiMateClient() {
++    _simInstance = this;
+     // Forward the mock's telemetry to whatever the firmware registered.
+     _mock.onSensor = [this](float t, float p, float pf, float mf, float pr, float pp, float hp) {
+         if (_sensorCb)
+diff --git a/sim/comms/GaggiMateClient.h b/sim/comms/GaggiMateClient.h
+index 3866ea09..a0c9abf7 100644
+--- a/sim/comms/GaggiMateClient.h
++++ b/sim/comms/GaggiMateClient.h
+@@ -102,7 +102,18 @@ class GaggiMateClient {
+     void onTofMeasurement(TofCallback cb) { _tofCb = std::move(cb); }
+     void onError(ErrorCallback cb) { _errorCb = std::move(cb); }
+ 
++    // --- Simulator machine panel hooks -------------------------------------
++    // The panel injects rocker edges exactly where real controller-board button
++    // reports would arrive, and reads the mock's physical state for the visual.
++    static GaggiMateClient *simInstance() { return _simInstance; }
++    void simInjectButton(uint8_t index, bool pressed) {
++        if (_buttonCb)
++            _buttonCb(index, pressed);
++    }
++    MockController &simMock() { return _mock; }
++
+   private:
++    static GaggiMateClient *_simInstance;
+     MockController _mock;
+     NimBLEClient _nativeClient;
+ 
+diff --git a/sim/comms/MockController.cpp b/sim/comms/MockController.cpp
+index 303417e3..5534cd5b 100644
+--- a/sim/comms/MockController.cpp
++++ b/sim/comms/MockController.cpp
+@@ -43,6 +43,11 @@ void MockController::update() {
+     const float gain = (dest - temperature) * (1.0f - expf(-dt / tau));
+     temperature += gain;
+ 
++    // Venting steam through the open wand valve bleeds boiler heat. Only matters
++    // when the boiler is hot enough to produce steam.
++    if (wandValveOpen && temperature > 100.0f)
++        temperature -= 1.5f * dt;
++
+     // The pump is "active" when the display asks for any drive.
+     const bool pumpActive = pumpPower > 1.0f || targetPressure > 0.1f || targetFlow > 0.1f;
+     float pDest = 0.0f, fDest = 0.0f;
+diff --git a/sim/comms/MockController.h b/sim/comms/MockController.h
+index 1f3042e0..e63a9d77 100644
+--- a/sim/comms/MockController.h
++++ b/sim/comms/MockController.h
+@@ -21,6 +21,25 @@ class MockController {
+     void setRelay(const RelayCommand &c);
+     void tareScale() { weight = 0.0f; }
+ 
++    // --- Simulator machine panel hooks -------------------------------------
++    // The Silvia's steam/hot-water wand valve is manual: the firmware never
++    // sees it, it only changes where water/steam physically goes.
++    void setWandValve(bool open) { wandValveOpen = open; }
++
++    struct SimMachineState {
++        float temperature;  // boiler °C
++        float targetTemp;   // setpoint (0 = boiler off)
++        float pressure;     // bar
++        float flow;         // ml/s
++        bool pumpActive;    // display is driving the pump
++        bool brewValveOpen; // 3-way solenoid routing to group head
++        bool wandValveOpen; // manual wand valve
++    };
++    SimMachineState getSimState() const {
++        const bool pumpActive = pumpPower > 1.0f || targetPressure > 0.1f || targetFlow > 0.1f;
++        return {temperature, targetTemp, pressure, flow, pumpActive, brewValveOpen, wandValveOpen};
++    }
++
+     SensorFn onSensor;
+     VolumetricFn onVolumetric;
+     TofFn onTof;
+@@ -40,6 +59,7 @@ class MockController {
+     float targetPressure = 0.0f; // bar
+     float targetFlow = 0.0f;     // ml/s
+     bool brewValveOpen = false;
++    bool wandValveOpen = false;
+ 
+     float pressure = 0.0f; // bar
+     float flow = 0.0f;     // ml/s
+diff --git a/sim/driver/SdlDriver.cpp b/sim/driver/SdlDriver.cpp
+index b0731af0..2154fd94 100644
+--- a/sim/driver/SdlDriver.cpp
++++ b/sim/driver/SdlDriver.cpp
+@@ -1,5 +1,6 @@
+ #include "SdlDriver.h"
+ 
++#include "../machine/MachinePanel.h"
+ #include <SDL.h>
+ #include <cstdlib>
+ #include <lvgl.h>
+@@ -10,6 +11,9 @@ SdlDriver *SdlDriver::instance = nullptr;
+ // The LilyGo T-RGB panel the default UI targets is 480x480.
+ static constexpr int DISP_W = 480;
+ static constexpr int DISP_H = 480;
++// Total window: round display on the left, simulated machine panel on the right.
++static constexpr int WIN_W = DISP_W + MachinePanel::WIDTH;
++static constexpr int WIN_H = DISP_H;
+ 
+ static SDL_Window *s_window = nullptr;
+ static SDL_Renderer *s_renderer = nullptr;
+@@ -46,7 +50,7 @@ void SdlDriver::init() {
+         exit(1);
+     }
+     s_window =
+-        SDL_CreateWindow("GaggiMate Simulator", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DISP_W, DISP_H, SDL_WINDOW_SHOWN);
++        SDL_CreateWindow("GaggiMate Simulator", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIN_W, WIN_H, SDL_WINDOW_SHOWN);
+     s_renderer = SDL_CreateRenderer(s_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+     s_texture = SDL_CreateTexture(s_renderer, SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STREAMING, DISP_W, DISP_H);
+ 
+@@ -95,16 +99,25 @@ void SdlDriver::pumpAndRender() {
+             s_quit = true;
+             break;
+         case SDL_MOUSEMOTION:
+-            s_mouseX = e.motion.x;
+-            s_mouseY = e.motion.y;
++            if (e.motion.x < DISP_W) {
++                s_mouseX = e.motion.x;
++                s_mouseY = e.motion.y;
++            }
+             break;
+         case SDL_MOUSEBUTTONDOWN:
+             if (e.button.button == SDL_BUTTON_LEFT) {
+-                s_mousePressed = true;
+-                s_mouseX = e.button.x;
+-                s_mouseY = e.button.y;
++                if (e.button.x < DISP_W) {
++                    s_mousePressed = true;
++                    s_mouseX = e.button.x;
++                    s_mouseY = e.button.y;
++                } else {
++                    MachinePanel::getInstance()->onMouseDown(e.button.x - DISP_W, e.button.y);
++                }
+             }
+             break;
++        case SDL_KEYDOWN:
++            MachinePanel::getInstance()->onKey(e.key.keysym.sym);
++            break;
+         case SDL_MOUSEBUTTONUP:
+             if (e.button.button == SDL_BUTTON_LEFT)
+                 s_mousePressed = false;
+@@ -115,8 +128,10 @@ void SdlDriver::pumpAndRender() {
+     }
+     SDL_SetRenderDrawColor(s_renderer, BEZEL_R, BEZEL_G, BEZEL_B, 0xFF);
+     SDL_RenderClear(s_renderer);
+-    SDL_RenderCopy(s_renderer, s_texture, nullptr, nullptr);
+-    SDL_RenderCopy(s_renderer, s_mask, nullptr, nullptr); // round off the corners
++    const SDL_Rect dispRect{0, 0, DISP_W, DISP_H};
++    SDL_RenderCopy(s_renderer, s_texture, nullptr, &dispRect);
++    SDL_RenderCopy(s_renderer, s_mask, nullptr, &dispRect); // round off the corners
++    MachinePanel::getInstance()->render(s_renderer, DISP_W, SDL_GetTicks());
+     SDL_RenderPresent(s_renderer);
+ }
+ 
+@@ -125,9 +140,11 @@ bool SdlDriver::shouldQuit() const { return s_quit; }
+ void SdlDriver::screenshot(const char *path) {
+     SDL_SetRenderDrawColor(s_renderer, BEZEL_R, BEZEL_G, BEZEL_B, 0xFF);
+     SDL_RenderClear(s_renderer);
+-    SDL_RenderCopy(s_renderer, s_texture, nullptr, nullptr);
+-    SDL_RenderCopy(s_renderer, s_mask, nullptr, nullptr); // round off the corners
+-    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, DISP_W, DISP_H, 16, SDL_PIXELFORMAT_RGB565);
++    const SDL_Rect dispRect{0, 0, DISP_W, DISP_H};
++    SDL_RenderCopy(s_renderer, s_texture, nullptr, &dispRect);
++    SDL_RenderCopy(s_renderer, s_mask, nullptr, &dispRect); // round off the corners
++    MachinePanel::getInstance()->render(s_renderer, DISP_W, SDL_GetTicks());
++    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, WIN_W, WIN_H, 16, SDL_PIXELFORMAT_RGB565);
+     if (surface) {
+         SDL_RenderReadPixels(s_renderer, nullptr, SDL_PIXELFORMAT_RGB565, surface->pixels, surface->pitch);
+         SDL_SaveBMP(surface, path);
+diff --git a/sim/machine/MachinePanel.cpp b/sim/machine/MachinePanel.cpp
+new file mode 100644
+index 00000000..9676078f
+--- /dev/null
++++ b/sim/machine/MachinePanel.cpp
+@@ -0,0 +1,342 @@
++#include "MachinePanel.h"
++
++#include "../comms/GaggiMateClient.h"
++#include <cmath>
++#include <cstring>
++
++MachinePanel *MachinePanel::instance = nullptr;
++
++MachinePanel *MachinePanel::getInstance() {
++    if (instance == nullptr)
++        instance = new MachinePanel();
++    return instance;
++}
++
++// ---------------------------------------------------------------------------
++// Tiny 5x7 bitmap font ('#' = pixel). Only the glyphs the panel uses.
++// ---------------------------------------------------------------------------
++namespace {
++
++struct Glyph {
++    char ch;
++    const char *rows[7];
++};
++
++const Glyph FONT[] = {
++    {'A', {" ### ", "#   #", "#   #", "#####", "#   #", "#   #", "#   #"}},
++    {'B', {"#### ", "#   #", "#   #", "#### ", "#   #", "#   #", "#### "}},
++    {'C', {" ### ", "#   #", "#    ", "#    ", "#    ", "#   #", " ### "}},
++    {'D', {"#### ", "#   #", "#   #", "#   #", "#   #", "#   #", "#### "}},
++    {'E', {"#####", "#    ", "#    ", "#### ", "#    ", "#    ", "#####"}},
++    {'F', {"#####", "#    ", "#    ", "#### ", "#    ", "#    ", "#    "}},
++    {'G', {" ### ", "#   #", "#    ", "# ###", "#   #", "#   #", " ### "}},
++    {'H', {"#   #", "#   #", "#   #", "#####", "#   #", "#   #", "#   #"}},
++    {'I', {" ### ", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", " ### "}},
++    {'L', {"#    ", "#    ", "#    ", "#    ", "#    ", "#    ", "#####"}},
++    {'M', {"#   #", "## ##", "# # #", "# # #", "#   #", "#   #", "#   #"}},
++    {'N', {"#   #", "##  #", "# # #", "#  ##", "#   #", "#   #", "#   #"}},
++    {'O', {" ### ", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "}},
++    {'P', {"#### ", "#   #", "#   #", "#### ", "#    ", "#    ", "#    "}},
++    {'R', {"#### ", "#   #", "#   #", "#### ", "# #  ", "#  # ", "#   #"}},
++    {'S', {" ####", "#    ", "#    ", " ### ", "    #", "    #", "#### "}},
++    {'T', {"#####", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", "  #  "}},
++    {'U', {"#   #", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "}},
++    {'V', {"#   #", "#   #", "#   #", "#   #", "#   #", " # # ", "  #  "}},
++    {'W', {"#   #", "#   #", "#   #", "# # #", "# # #", "## ##", "#   #"}},
++    {'Y', {"#   #", "#   #", " # # ", "  #  ", "  #  ", "  #  ", "  #  "}},
++    {'0', {" ### ", "#   #", "#  ##", "# # #", "##  #", "#   #", " ### "}},
++    {'1', {"  #  ", " ##  ", "  #  ", "  #  ", "  #  ", "  #  ", " ### "}},
++    {'2', {" ### ", "#   #", "    #", "   # ", "  #  ", " #   ", "#####"}},
++    {'3', {" ### ", "#   #", "    #", "  ## ", "    #", "#   #", " ### "}},
++    {'4', {"   # ", "  ## ", " # # ", "#  # ", "#####", "   # ", "   # "}},
++    {'5', {"#####", "#    ", "#### ", "    #", "    #", "#   #", " ### "}},
++    {'6', {" ### ", "#    ", "#    ", "#### ", "#   #", "#   #", " ### "}},
++    {'7', {"#####", "    #", "   # ", "  #  ", " #   ", " #   ", " #   "}},
++    {'8', {" ### ", "#   #", "#   #", " ### ", "#   #", "#   #", " ### "}},
++    {'9', {" ### ", "#   #", "#   #", " ####", "    #", "    #", " ### "}},
++    {'.', {"     ", "     ", "     ", "     ", "     ", "  ## ", "  ## "}},
++    {'-', {"     ", "     ", "     ", " ### ", "     ", "     ", "     "}},
++};
++
++const Glyph *findGlyph(char c) {
++    for (const auto &g : FONT)
++        if (g.ch == c)
++            return &g;
++    return nullptr;
++}
++
++void setColor(SDL_Renderer *r, uint32_t rgb, Uint8 a = 0xFF) {
++    SDL_SetRenderDrawColor(r, (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, a);
++}
++
++void fillRect(SDL_Renderer *r, int x, int y, int w, int h, uint32_t rgb, Uint8 a = 0xFF) {
++    setColor(r, rgb, a);
++    SDL_Rect rc{x, y, w, h};
++    SDL_RenderFillRect(r, &rc);
++}
++
++void frameRect(SDL_Renderer *r, int x, int y, int w, int h, uint32_t rgb) {
++    setColor(r, rgb);
++    SDL_Rect rc{x, y, w, h};
++    SDL_RenderDrawRect(r, &rc);
++}
++
++void fillCircle(SDL_Renderer *r, int cx, int cy, int rad, uint32_t rgb, Uint8 a = 0xFF) {
++    setColor(r, rgb, a);
++    for (int dy = -rad; dy <= rad; dy++) {
++        const int dx = (int)std::sqrt((float)(rad * rad - dy * dy));
++        SDL_RenderDrawLine(r, cx - dx, cy + dy, cx + dx, cy + dy);
++    }
++}
++
++void drawLine(SDL_Renderer *r, int x1, int y1, int x2, int y2, uint32_t rgb, Uint8 a = 0xFF) {
++    setColor(r, rgb, a);
++    SDL_RenderDrawLine(r, x1, y1, x2, y2);
++}
++
++// scale 1 => 5x7 px per char + 1 px spacing.
++void drawText(SDL_Renderer *r, int x, int y, const char *s, uint32_t rgb, int scale = 1) {
++    setColor(r, rgb);
++    int cx = x;
++    for (; *s; s++) {
++        if (const Glyph *g = findGlyph(*s)) {
++            for (int row = 0; row < 7; row++)
++                for (int col = 0; col < 5; col++)
++                    if (g->rows[row][col] == '#') {
++                        SDL_Rect px{cx + col * scale, y + row * scale, scale, scale};
++                        SDL_RenderFillRect(r, &px);
++                    }
++        }
++        cx += 6 * scale; // 5 wide + 1 gap (space falls through as blank)
++    }
++}
++
++int textWidth(const char *s, int scale = 1) { return (int)strlen(s) * 6 * scale - scale; }
++
++void drawTextCentered(SDL_Renderer *r, int cx, int y, const char *s, uint32_t rgb, int scale = 1) {
++    drawText(r, cx - textWidth(s, scale) / 2, y, s, rgb, scale);
++}
++
++// --- Layout (panel-local coordinates) --------------------------------------
++constexpr uint32_t COL_BG = 0x1b1b20;
++constexpr uint32_t COL_BODY = 0x8f9499;    // stainless
++constexpr uint32_t COL_BODY_DK = 0x6d7276; // shadowed stainless
++constexpr uint32_t COL_BLACK = 0x2a2a2e;
++constexpr uint32_t COL_TEXT = 0xd8d8dc;
++constexpr uint32_t COL_DIM = 0x77777c;
++constexpr uint32_t COL_WATER = 0x64a8e6;
++constexpr uint32_t COL_COFFEE = 0x6b3f1d;
++constexpr uint32_t COL_STEAM = 0xcfd4d8;
++constexpr uint32_t COL_LAMP_ON = 0xffb531; // amber lamps
++constexpr uint32_t COL_LAMP_OFF = 0x4a3a20;
++constexpr uint32_t COL_PWR_ON = 0xe8e8e0; // white power lamp
++constexpr uint32_t COL_RED = 0xd05040;
++
++// Machine visual
++constexpr int MACH_X = 40, MACH_Y = 18, MACH_W = 170, MACH_H = 150; // body
++constexpr int TRAY_Y = 288;                                        // drip tray top
++
++// Rocker switches (three across)
++constexpr int SW_Y = 356, SW_W = 56, SW_H = 64, SW_GAP = 26;
++constexpr int SW_X0 = 20;
++// Steam valve knob
++constexpr int KNOB_CX = 40 + 170 + 45, KNOB_CY = 60, KNOB_R = 26;
++
++int switchX(int i) { return SW_X0 + i * (SW_W + SW_GAP); }
++
++} // namespace
++
++// ---------------------------------------------------------------------------
++// Input
++// ---------------------------------------------------------------------------
++void MachinePanel::toggleSwitch(int index) {
++    sw[index] = !sw[index];
++    if (auto *c = GaggiMateClient::simInstance())
++        c->simInjectButton((uint8_t)index, sw[index]); // latching rocker edge
++}
++
++void MachinePanel::toggleValve() {
++    valveOpen = !valveOpen;
++    if (auto *c = GaggiMateClient::simInstance())
++        c->simMock().setWandValve(valveOpen);
++}
++
++void MachinePanel::onMouseDown(int x, int y) {
++    for (int i = 0; i < 3; i++) {
++        if (x >= switchX(i) && x < switchX(i) + SW_W && y >= SW_Y && y < SW_Y + SW_H) {
++            toggleSwitch(i);
++            return;
++        }
++    }
++    const int dx = x - KNOB_CX, dy = y - KNOB_CY;
++    if (dx * dx + dy * dy <= (KNOB_R + 6) * (KNOB_R + 6))
++        toggleValve();
++}
++
++void MachinePanel::onKey(SDL_Keycode key) {
++    switch (key) {
++    case SDLK_b:
++        toggleSwitch(0);
++        break;
++    case SDLK_s:
++        toggleSwitch(1);
++        break;
++    case SDLK_w:
++        toggleSwitch(2);
++        break;
++    case SDLK_v:
++        toggleValve();
++        break;
++    default:
++        break;
++    }
++}
++
++// ---------------------------------------------------------------------------
++// Rendering
++// ---------------------------------------------------------------------------
++void MachinePanel::render(SDL_Renderer *r, int offsetX, uint32_t nowMs) {
++    // Read the mock's physical state (may not exist for the first frames).
++    MockController::SimMachineState st{};
++    if (auto *c = GaggiMateClient::simInstance())
++        st = c->simMock().getSimState();
++
++    const bool brewing = st.brewValveOpen && st.flow > 0.05f;
++    const bool hotWater = valveOpen && st.pumpActive && !st.brewValveOpen && st.flow > 0.05f;
++    const bool steaming = valveOpen && st.temperature > 100.0f && !hotWater;
++    const bool boilerOn = st.targetTemp > 0.5f;
++    const bool heating = boilerOn && st.temperature < st.targetTemp - 1.0f;
++    const bool ready = boilerOn && !heating;
++
++    const int phase = (int)(nowMs / 120); // animation clock
++
++    // Panel background + separator from the round display.
++    fillRect(r, offsetX, 0, WIDTH, 480, COL_BG);
++    drawLine(r, offsetX, 0, offsetX, 479, 0x000000);
++
++#define PX(x) (offsetX + (x))
++
++    // --- Machine front view -------------------------------------------------
++    // Body
++    fillRect(r, PX(MACH_X), MACH_Y, MACH_W, MACH_H, COL_BODY);
++    fillRect(r, PX(MACH_X), MACH_Y, MACH_W, 12, COL_BODY_DK); // top edge
++    // Boiler glow strip while heating (pulses), steady when ready.
++    if (boilerOn) {
++        const Uint8 a = heating ? (Uint8)(90 + 80 * std::sin(nowMs / 300.0)) : 60;
++        fillRect(r, PX(MACH_X + 8), MACH_Y + 20, MACH_W - 16, 26, COL_RED, a);
++    }
++    drawTextCentered(r, PX(MACH_X + MACH_W / 2), MACH_Y + 28, "SILVIA", COL_BLACK);
++
++    // Group head + portafilter
++    const int grpCX = PX(MACH_X + MACH_W / 2);
++    const int grpY = MACH_Y + MACH_H;
++    fillRect(r, grpCX - 34, grpY, 68, 16, COL_BODY_DK);     // group
++    fillRect(r, grpCX - 26, grpY + 16, 52, 12, COL_BLACK);  // portafilter body
++    fillRect(r, grpCX + 26, grpY + 18, 34, 8, COL_BLACK);   // handle
++    fillRect(r, grpCX - 5, grpY + 28, 10, 8, COL_BLACK);    // spout
++
++    // Cup on the drip tray
++    const int cupW = 44, cupH = 34;
++    const int cupX = grpCX - cupW / 2, cupY = TRAY_Y - cupH;
++    fillRect(r, PX(MACH_X - 10), TRAY_Y, MACH_W + 20, 8, COL_BODY_DK); // tray
++    setColor(r, COL_TEXT);
++    frameRect(r, cupX, cupY, cupW, cupH, COL_TEXT);
++    if (brewing) {
++        // Falling coffee stream + slowly filling cup.
++        for (int i = 0; i < 3; i++) {
++            const int yy = grpY + 36 + ((phase * 7 + i * 22) % (cupY - grpY - 36 + 6));
++            fillRect(r, grpCX - 1, yy, 3, 10, COL_COFFEE);
++        }
++        const int fill = 6 + (phase / 4) % (cupH - 10);
++        fillRect(r, cupX + 2, cupY + cupH - 2 - fill, cupW - 4, fill, COL_COFFEE);
++    }
++
++    // Steam wand: from the body's right edge, angled down-right.
++    const int wandX1 = PX(MACH_X + MACH_W - 6), wandY1 = MACH_Y + MACH_H - 30;
++    const int wandX2 = wandX1 + 34, wandY2 = wandY1 + 58;
++    for (int t = -1; t <= 1; t++)
++        drawLine(r, wandX1 + t, wandY1, wandX2 + t, wandY2, COL_BODY_DK);
++    fillRect(r, wandX2 - 3, wandY2, 7, 10, COL_BODY_DK); // tip
++
++    if (steaming) {
++        // Rising steam puffs from the tip.
++        for (int i = 0; i < 4; i++) {
++            const int t = (phase * 5 + i * 17) % 70;
++            const int px = wandX2 + 2 + (int)(6 * std::sin((phase + i * 9) / 3.0));
++            fillCircle(r, px, wandY2 + 10 - t, 4 + t / 14, COL_STEAM, (Uint8)(150 - t * 2));
++        }
++    }
++    if (hotWater) {
++        // Water stream falling from the tip.
++        for (int i = 0; i < 3; i++) {
++            const int yy = wandY2 + 12 + ((phase * 7 + i * 20) % 56);
++            fillRect(r, wandX2 + 1, yy, 3, 9, COL_WATER);
++        }
++    }
++
++    // --- Steam valve knob ---------------------------------------------------
++    fillCircle(r, PX(KNOB_CX), KNOB_CY, KNOB_R, COL_BLACK);
++    fillCircle(r, PX(KNOB_CX), KNOB_CY, KNOB_R - 4, valveOpen ? 0x3a3a40 : COL_BLACK);
++    // Handle bar: vertical = shut, horizontal = open (animation not modeled).
++    const double ang = valveOpen ? 0.0 : M_PI / 2.0;
++    const int hx = (int)(std::cos(ang) * (KNOB_R - 6)), hy = (int)(std::sin(ang) * (KNOB_R - 6));
++    for (int t = -1; t <= 1; t++)
++        drawLine(r, PX(KNOB_CX) - hx + t, KNOB_CY - hy, PX(KNOB_CX) + hx + t, KNOB_CY + hy, COL_TEXT);
++    drawTextCentered(r, PX(KNOB_CX), KNOB_CY + KNOB_R + 8, "VALVE", COL_DIM);
++    drawTextCentered(r, PX(KNOB_CX), KNOB_CY + KNOB_R + 20, valveOpen ? "OPEN" : "SHUT", valveOpen ? COL_TEXT : COL_DIM);
++
++    // --- Status line --------------------------------------------------------
++    const char *status = "IDLE";
++    uint32_t statusCol = COL_DIM;
++    if (brewing) {
++        status = "BREWING";
++        statusCol = COL_LAMP_ON;
++    } else if (hotWater) {
++        status = "HOT WATER";
++        statusCol = COL_WATER;
++    } else if (steaming) {
++        status = "STEAMING";
++        statusCol = COL_STEAM;
++    } else if (heating) {
++        status = "HEATING";
++        statusCol = COL_RED;
++    } else if (ready) {
++        status = "READY";
++        statusCol = 0x62c46a;
++    }
++    drawTextCentered(r, PX(WIDTH / 2), 306, status, statusCol, 2);
++
++    char buf[32];
++    snprintf(buf, sizeof(buf), "%d C  %.1f BAR", (int)(st.temperature + 0.5f), st.pressure);
++    drawTextCentered(r, PX(WIDTH / 2), 328, buf, COL_DIM);
++
++    // --- Rockers + lamps ----------------------------------------------------
++    static const char *names[3] = {"BREW", "STEAM", "WATER"};
++    for (int i = 0; i < 3; i++) {
++        const int x = PX(switchX(i)), y = SW_Y;
++        // Lamp above the rocker: wired to the rocker's second pole (constant 5V),
++        // so it simply follows switch position.
++        fillCircle(r, x + SW_W / 2, y - 16, 7, sw[i] ? COL_LAMP_ON : COL_LAMP_OFF);
++        if (sw[i])
++            fillCircle(r, x + SW_W / 2, y - 16, 11, COL_LAMP_ON, 60); // glow
++
++        // Rocker body: top half depressed when ON.
++        fillRect(r, x, y, SW_W, SW_H, COL_BLACK);
++        frameRect(r, x, y, SW_W, SW_H, COL_DIM);
++        if (sw[i])
++            fillRect(r, x + 4, y + 4, SW_W - 8, SW_H / 2 - 6, 0x505058); // pressed top
++        else
++            fillRect(r, x + 4, y + SW_H / 2 + 2, SW_W - 8, SW_H / 2 - 6, 0x505058); // pressed bottom
++        drawTextCentered(r, x + SW_W / 2, y + SW_H / 2 - 3, sw[i] ? "I" : "O", COL_TEXT);
++        drawTextCentered(r, x + SW_W / 2, y + SW_H + 8, names[i], COL_DIM);
++    }
++
++    // Power lamp (always on while the sim runs).
++    fillCircle(r, PX(WIDTH - 30), SW_Y - 16, 6, COL_PWR_ON);
++    drawTextCentered(r, PX(WIDTH - 30), SW_Y - 4, "PWR", COL_DIM);
++
++    // Key hints
++    drawTextCentered(r, PX(WIDTH / 2), 458, "B S W - SWITCHES   V - VALVE", 0x55555a);
++
++#undef PX
++}
+diff --git a/sim/machine/MachinePanel.h b/sim/machine/MachinePanel.h
+new file mode 100644
+index 00000000..a7395841
+--- /dev/null
++++ b/sim/machine/MachinePanel.h
+@@ -0,0 +1,41 @@
++// Simulated "machine" side panel for the desktop simulator: the Silvia's three
++// latching rockers (brew / water / steam, with their position-driven lamps), the
++// manual steam/hot-water wand valve, and an animated front view that shows what
++// the machine is physically doing (brewing into the cup, steaming, dispensing
++// hot water, heating).
++//
++// Rocker edges are injected into the display firmware through
++// GaggiMateClient::simInjectButton() using the same button indices the real
++// controller board sends (0 = brew, 1 = steam, 2 = water). The wand valve is
++// purely physical on a Silvia — the firmware never sees it — so it only feeds
++// the MockController's hydraulic model.
++#pragma once
++
++#include <SDL.h>
++#include <cstdint>
++
++class MachinePanel {
++  public:
++    static constexpr int WIDTH = 300; // panel width, appended right of the 480px display
++
++    static MachinePanel *getInstance();
++
++    // Mouse handling; x/y are panel-local (0..WIDTH-1, 0..479).
++    void onMouseDown(int x, int y);
++
++    // Keyboard shortcuts (window-global): b/w/s toggle rockers, v toggles valve.
++    void onKey(SDL_Keycode key);
++
++    // Draw the panel; offsetX is where the panel starts inside the window.
++    void render(SDL_Renderer *r, int offsetX, uint32_t nowMs);
++
++  private:
++    MachinePanel() = default;
++    static MachinePanel *instance;
++
++    void toggleSwitch(int index); // 0 brew, 1 steam, 2 water
++    void toggleValve();
++
++    bool sw[3] = {false, false, false}; // rocker positions (latching)
++    bool valveOpen = false;             // manual wand valve
++};
+diff --git a/sim/main.cpp b/sim/main.cpp
+index 4ed276f9..c0dcf075 100644
+--- a/sim/main.cpp
++++ b/sim/main.cpp
+@@ -4,6 +4,7 @@
+ // are no-ops in the simulator.
+ #include "ESPAsyncWebServer.h"
+ #include "SdlDriver.h"
++#include "machine/MachinePanel.h"
+ #include <Arduino.h>
+ #include <cstdlib>
+ #include <cstring>
+@@ -14,6 +15,29 @@
+ // The generated UI event handlers reference this global (see main.h on device).
+ Controller controller;
+ 
++// Scripted panel input for headless runs: `--script b@1500,s@3000,v@4000`
++// feeds the machine panel the given key at the given ms after start.
++struct ScriptEvent {
++    SDL_Keycode key;
++    unsigned long atMs;
++    bool fired = false;
++};
++static ScriptEvent s_script[32];
++static int s_scriptLen = 0;
++
++static void parseScript(const char *arg) {
++    const char *p = arg;
++    while (*p && s_scriptLen < 32) {
++        const char key = *p++;
++        if (*p == '@') {
++            p++;
++            s_script[s_scriptLen++] = {(SDL_Keycode)key, strtoul(p, (char **)&p, 10)};
++        }
++        if (*p == ',')
++            p++;
++    }
++}
++
+ int main(int argc, char **argv) {
+     // Optional: `--screenshot <path> [delayMs]` renders for a bit, saves a BMP, exits.
+     const char *shotPath = nullptr;
+@@ -23,6 +47,8 @@ int main(int argc, char **argv) {
+             shotPath = argv[++i];
+             if (i + 1 < argc)
+                 shotDelayMs = strtoul(argv[i + 1], nullptr, 10);
++        } else if (strcmp(argv[i], "--script") == 0 && i + 1 < argc) {
++            parseScript(argv[++i]);
+         }
+     }
+ 
+@@ -74,6 +100,13 @@ int main(int argc, char **argv) {
+             }
+         }
+ 
++        for (int i = 0; i < s_scriptLen; i++) {
++            if (!s_script[i].fired && millis() - start >= s_script[i].atMs) {
++                s_script[i].fired = true;
++                MachinePanel::getInstance()->onKey(s_script[i].key);
++            }
++        }
++
+         drv->pumpAndRender();
+ 
+         if (shotPath && !shotTaken && millis() - start >= shotDelayMs) {
+diff --git a/sim/platform/arduino/Print.cpp b/sim/platform/arduino/Print.cpp
+index f1867e3d..e373d978 100644
+--- a/sim/platform/arduino/Print.cpp
++++ b/sim/platform/arduino/Print.cpp
+@@ -23,6 +23,7 @@
+ 
+ #include "Arduino.h"
+ #include <math.h>
++#include <stdarg.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+diff --git a/sim/web/remote_scales.h b/sim/web/remote_scales.h
+index 9471cbd4..2e643ceb 100644
+--- a/sim/web/remote_scales.h
++++ b/sim/web/remote_scales.h
+@@ -4,6 +4,7 @@
+ 
+ #include "WString.h"
+ #include <cstdint>
++#include <memory>
+ #include <string>
+ #include <vector>
+ 
+diff --git a/src/display/core/utils.h b/src/display/core/utils.h
+index 396358a5..862f9ff5 100644
+--- a/src/display/core/utils.h
++++ b/src/display/core/utils.h
+@@ -1,4 +1,5 @@
+ #pragma once
++#include <stdexcept>
+ #ifndef UTILS_H
+ #define UTILS_H
+ #include <Arduino.h>

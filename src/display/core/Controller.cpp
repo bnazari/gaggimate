@@ -1279,6 +1279,10 @@ void Controller::handleWaterButton(int buttonStatus) {
         case MODE_WATER:
             if (!isActive()) {
                 activate();
+            } else if (settings.isMomentaryButtons()) {
+                // Momentary: press toggles the pump (same pattern as the brew
+                // button). Latching keeps stop-on-release below.
+                deactivate();
             }
             break;
         default:

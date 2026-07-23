@@ -205,6 +205,8 @@ class Controller {
     unsigned long lastProgress = 0;
     unsigned long lastAction = 0;
     unsigned long brewBtnPressMs = 0; // momentary long-press (flush) tracking
+    bool brewBtnLongFired = false;    // flush already triggered during this hold
+    void checkBrewButtonLongPress();  // polled: fires flush mid-hold at threshold
 
     // Mode status LEDs (channels 0=brew, 1=steam, 2=water): blink while the
     // boiler heats toward the mode's setpoint, solid once at temperature.

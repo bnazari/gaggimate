@@ -283,22 +283,17 @@ void Controller::setupBluetooth() {
             // flush instead of the normal brew action. Latching switches keep
             // the stock edge-driven behavior (a held rocker is not a "press").
             if (settings.isMomentaryButtons()) {
-                constexpr unsigned long LONG_PRESS_MS = 800;
                 if (status) {
                     brewBtnPressMs = millis();
+                    brewBtnLongFired = false;
                     return;
                 }
-                const unsigned long held = millis() - brewBtnPressMs;
+                // Release. The flush fires mid-hold from checkBrewButtonLongPress();
+                // if it already did, the release is consumed. Otherwise it's a tap.
+                const bool fired = brewBtnLongFired;
                 brewBtnPressMs = 0;
-                if (held >= LONG_PRESS_MS) {
-                    // Same sequence the dedicated "flush" button behavior uses.
-                    if (getMode() == MODE_STANDBY) {
-                        deactivateStandby();
-                    }
-                    if (getMode() != MODE_BREW && !isActive()) {
-                        setMode(MODE_BREW);
-                    }
-                    onFlush();
+                brewBtnLongFired = false;
+                if (fired) {
                     return;
                 }
                 handleBrewButton(1); // tap: normal press action on release
@@ -685,7 +680,8 @@ void Controller::loopControl() {
             lastPing = now;
         }
 
-        updateModeLeds(); // change-driven; sends only on state transitions
+        checkBrewButtonLongPress(); // fires flush at 2s while still held
+        updateModeLeds();           // change-driven; sends only on state transitions
 
         updateControl();
     }
@@ -736,6 +732,23 @@ void Controller::startProcessLocked(Process *process, std::vector<const char *> 
     applyConnectionPriority(); // shot started -> tight BLE interval
     events.push_back("controller:process:start");
     updateLastAction();
+}
+
+void Controller::checkBrewButtonLongPress() {
+    constexpr unsigned long LONG_PRESS_MS = 2000;
+    if (brewBtnPressMs == 0 || brewBtnLongFired)
+        return;
+    if (millis() - brewBtnPressMs < LONG_PRESS_MS)
+        return;
+    brewBtnLongFired = true;
+    // Same sequence the dedicated "flush" button behavior uses.
+    if (getMode() == MODE_STANDBY) {
+        deactivateStandby();
+    }
+    if (getMode() != MODE_BREW && !isActive()) {
+        setMode(MODE_BREW);
+    }
+    onFlush();
 }
 
 void Controller::updateModeLeds() {

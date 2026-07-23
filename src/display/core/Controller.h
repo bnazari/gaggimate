@@ -205,6 +205,12 @@ class Controller {
     unsigned long lastProgress = 0;
     unsigned long lastAction = 0;
     unsigned long brewBtnPressMs = 0; // momentary long-press (flush) tracking
+
+    // Mode status LEDs (channels 0=brew, 1=steam, 2=water): blink while the
+    // boiler heats toward the mode's setpoint, solid once at temperature.
+    void updateModeLeds();
+    uint8_t lastLedState[3] = {1, 1, 1}; // invalid sentinel forces initial send
+    bool modeLedReady = false;           // at-temperature latch (with hysteresis)
     bool loaded = false;
     bool updating = false;
     bool autotuning = false;

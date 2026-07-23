@@ -26,6 +26,14 @@ class MockController {
     // sees it, it only changes where water/steam physically goes.
     void setWandValve(bool open) { wandValveOpen = open; }
 
+    // Mode LEDs (channels 8=brew, 9=steam, 10=water) as sent by the display
+    // firmware over the LedControl path: 0=off, 128=blink, 255=solid. Channels
+    // 0-7 belong to the Sunrise/Alba PCA9634 and are ignored here.
+    void setLed(uint8_t channel, uint8_t brightness) {
+        if (channel >= 8 && channel < 11)
+            ledState[channel - 8] = brightness;
+    }
+
     struct SimMachineState {
         float temperature;  // boiler °C
         float targetTemp;   // setpoint (0 = boiler off)
@@ -34,10 +42,12 @@ class MockController {
         bool pumpActive;    // display is driving the pump
         bool brewValveOpen; // 3-way solenoid routing to group head
         bool wandValveOpen; // manual wand valve
+        uint8_t led[3];     // mode LEDs: 0=off, 128=blink, 255=solid
     };
     SimMachineState getSimState() const {
         const bool pumpActive = pumpPower > 1.0f || targetPressure > 0.1f || targetFlow > 0.1f;
-        return {temperature, targetTemp, pressure, flow, pumpActive, brewValveOpen, wandValveOpen};
+        return {temperature, targetTemp,  pressure,      flow,
+                pumpActive,  brewValveOpen, wandValveOpen, {ledState[0], ledState[1], ledState[2]}};
     }
 
     SensorFn onSensor;
@@ -60,6 +70,7 @@ class MockController {
     float targetFlow = 0.0f;     // ml/s
     bool brewValveOpen = false;
     bool wandValveOpen = false;
+    uint8_t ledState[3] = {0, 0, 0};
 
     float pressure = 0.0f; // bar
     float flow = 0.0f;     // ml/s

@@ -112,4 +112,7 @@ void GaggiMateClient::sendAutotune(uint32_t, uint32_t, uint32_t) {
 }
 void GaggiMateClient::sendPressureScale(float) {}
 void GaggiMateClient::tare() { _mock.tareScale(); }
-void GaggiMateClient::sendLedControl(const LedChannelCommand *, size_t) {}
+void GaggiMateClient::sendLedControl(const LedChannelCommand *channels, size_t count) {
+    for (size_t i = 0; i < count; i++)
+        _mock.setLed(channels[i].channel, channels[i].brightness);
+}

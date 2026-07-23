@@ -49,6 +49,11 @@ class GaggiMateController {
     DigitalInput *brewBtn = nullptr;
     DigitalInput *steamBtn = nullptr;
     DigitalInput *waterBtn = nullptr; // third switch on ext4 (Silvia water rocker)
+
+    // Mode-status LEDs (this fork), J6 header: [0]=brew ext3/GPIO8, [1]=steam
+    // ext2/GPIO2, [2]=water ext1/GPIO1. 0=off, 255=solid, other=blink 1Hz.
+    void updateModeLedOutputs();
+    uint8_t modeLedState[3] = {0, 0, 0};
     PressureSensor *pressureSensor = nullptr;
     LedController *ledController = nullptr;
     DistanceSensor *distanceSensor = nullptr;

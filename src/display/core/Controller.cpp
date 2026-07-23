@@ -685,6 +685,8 @@ void Controller::loopControl() {
             lastPing = now;
         }
 
+        updateModeLeds(); // change-driven; sends only on state transitions
+
         updateControl();
     }
 }
@@ -734,6 +736,51 @@ void Controller::startProcessLocked(Process *process, std::vector<const char *> 
     applyConnectionPriority(); // shot started -> tight BLE interval
     events.push_back("controller:process:start");
     updateLastAction();
+}
+
+void Controller::updateModeLeds() {
+    constexpr uint8_t LED_OFF = 0, LED_BLINK = 128, LED_SOLID = 255;
+    uint8_t s[3] = {LED_OFF, LED_OFF, LED_OFF};
+    int active = -1;
+    switch (getMode()) {
+    case MODE_BREW:
+        active = 0;
+        break;
+    case MODE_STEAM:
+        active = 1;
+        break;
+    case MODE_WATER:
+        active = 2;
+        break;
+    default:
+        break; // standby: all off
+    }
+    if (active >= 0) {
+        const float target = getTargetTemp();
+        const float current = getCurrentTemp();
+        if (target > 0.0f) {
+            // 1.5C window to become ready, 3C drift (outside a shot) to lose it,
+            // so the LED doesn't flap around the setpoint or mid-brew dips.
+            if (modeLedReady) {
+                if (current < target - 3.0f && !isActive())
+                    modeLedReady = false;
+            } else if (current >= target - 1.5f) {
+                modeLedReady = true;
+            }
+            s[active] = modeLedReady ? LED_SOLID : LED_BLINK;
+        }
+    } else {
+        modeLedReady = false;
+    }
+    if (s[0] != lastLedState[0] || s[1] != lastLedState[1] || s[2] != lastLedState[2]) {
+        // Channels 8-10: outside the PCA9634 range (0-7) that the Sunrise/Alba
+        // LedControlPlugin drives, so the two features don't fight.
+        const LedChannelCommand ch[3] = {{8, s[0]}, {9, s[1]}, {10, s[2]}};
+        comms.sendLedControl(ch, 3);
+        lastLedState[0] = s[0];
+        lastLedState[1] = s[1];
+        lastLedState[2] = s[2];
+    }
 }
 
 void Controller::dispatchEvents(const std::vector<const char *> &events) {

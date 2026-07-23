@@ -400,10 +400,12 @@ void MachinePanel::render(SDL_Renderer *r, int offsetX, uint32_t nowMs) {
     static const char *names[3] = {"BREW", "STEAM", "WATER"};
     for (int i = 0; i < 3; i++) {
         const int x = PX(switchX(i)), y = SW_Y;
-        // Lamp above the switch: wired to the second pole (constant 5V), so it
-        // simply follows the contact state in either mode.
-        fillCircle(r, x + SW_W / 2, y - 16, 7, sw[i] ? COL_LAMP_ON : COL_LAMP_OFF);
-        if (sw[i])
+        // Lamp above the switch: firmware-driven status LED (J6 GPIO through the
+        // LedControl channel), replacing the stock neons. 0=off, 128=blink 1Hz,
+        // 255=solid. Channel index matches switch index (0 brew, 1 steam, 2 water).
+        const bool lampOn = st.led[i] == 255 || (st.led[i] > 0 && st.led[i] < 255 && (nowMs / 500) % 2 == 0);
+        fillCircle(r, x + SW_W / 2, y - 16, 7, lampOn ? COL_LAMP_ON : COL_LAMP_OFF);
+        if (lampOn)
             fillCircle(r, x + SW_W / 2, y - 16, 11, COL_LAMP_ON, 60); // glow
 
         fillRect(r, x, y, SW_W, SW_H, COL_BLACK);

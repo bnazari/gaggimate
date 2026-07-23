@@ -249,11 +249,16 @@ void GaggiMateController::setup() {
 }
 
 void GaggiMateController::updateModeLedOutputs() {
-    const bool blinkPhase = (millis() / 500) % 2 == 0;
+    // 0=off, 255=solid, 128=slow blink (heating, 1Hz), 64=fast blink (over
+    // temp, 4Hz). Note: loop() ticks every 250ms, which exactly samples the
+    // 125ms fast half-period edge-to-edge; the visible fast rate is 2Hz on
+    // hardware unless the loop delay is reduced.
+    const unsigned long now = millis();
     const uint8_t pins[3] = {_config.ext3Pin, _config.ext2Pin, _config.ext1Pin};
     for (int i = 0; i < 3; i++) {
         const uint8_t st = modeLedState[i];
-        const bool on = st == 255 || (st != 0 && blinkPhase);
+        const unsigned long half = st == 64 ? 125 : 500;
+        const bool on = st == 255 || (st != 0 && (now / half) % 2 == 0);
         digitalWrite(pins[i], on ? HIGH : LOW);
     }
 }

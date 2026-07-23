@@ -212,7 +212,7 @@ class Controller {
     // boiler heats toward the mode's setpoint, solid once at temperature.
     void updateModeLeds();
     uint8_t lastLedState[3] = {1, 1, 1}; // invalid sentinel forces initial send
-    bool modeLedReady = false;           // at-temperature latch (with hysteresis)
+    uint8_t modeLedTherm = 0;            // 0=below setpoint, 1=at temp, 2=over temp
     bool loaded = false;
     bool updating = false;
     bool autotuning = false;

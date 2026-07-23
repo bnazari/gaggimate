@@ -752,7 +752,7 @@ void Controller::checkBrewButtonLongPress() {
 }
 
 void Controller::updateModeLeds() {
-    constexpr uint8_t LED_OFF = 0, LED_BLINK = 128, LED_SOLID = 255;
+    constexpr uint8_t LED_OFF = 0, LED_BLINK_SLOW = 128, LED_BLINK_FAST = 64, LED_SOLID = 255;
     uint8_t s[3] = {LED_OFF, LED_OFF, LED_OFF};
     int active = -1;
     switch (getMode()) {
@@ -772,18 +772,31 @@ void Controller::updateModeLeds() {
         const float target = getTargetTemp();
         const float current = getCurrentTemp();
         if (target > 0.0f) {
-            // 1.5C window to become ready, 3C drift (outside a shot) to lose it,
-            // so the LED doesn't flap around the setpoint or mid-brew dips.
-            if (modeLedReady) {
-                if (current < target - 3.0f && !isActive())
-                    modeLedReady = false;
-            } else if (current >= target - 1.5f) {
-                modeLedReady = true;
+            // Three thermal states with hysteresis so the LED doesn't flap:
+            //   BELOW (slow blink)  -> READY at target-1.5
+            //   READY (solid)       -> BELOW at target-3 (outside a shot)
+            //                       -> OVER  at target+3
+            //   OVER  (fast blink)  -> READY at target+1.5
+            switch (modeLedTherm) {
+            case 0: // below setpoint
+                if (current >= target - 1.5f)
+                    modeLedTherm = current > target + 3.0f ? 2 : 1;
+                break;
+            case 1: // at temperature
+                if (current > target + 3.0f)
+                    modeLedTherm = 2;
+                else if (current < target - 3.0f && !isActive())
+                    modeLedTherm = 0;
+                break;
+            default: // over temperature
+                if (current <= target + 1.5f)
+                    modeLedTherm = current < target - 3.0f ? 0 : 1;
+                break;
             }
-            s[active] = modeLedReady ? LED_SOLID : LED_BLINK;
+            s[active] = modeLedTherm == 1 ? LED_SOLID : (modeLedTherm == 2 ? LED_BLINK_FAST : LED_BLINK_SLOW);
         }
     } else {
-        modeLedReady = false;
+        modeLedTherm = 0;
     }
     if (s[0] != lastLedState[0] || s[1] != lastLedState[1] || s[2] != lastLedState[2]) {
         // Channels 8-10: outside the PCA9634 range (0-7) that the Sunrise/Alba

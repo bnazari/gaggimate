@@ -283,8 +283,11 @@ void MachinePanel::render(SDL_Renderer *r, int offsetX, uint32_t nowMs) {
         st = c->simMock().getSimState();
 
     const bool brewing = st.brewValveOpen && st.flow > 0.05f;
-    const bool hotWater = valveOpen && st.pumpActive && !st.brewValveOpen && st.flow > 0.05f;
-    const bool steaming = valveOpen && st.temperature > 100.0f && !hotWater;
+    // Above ~100C the wand emits steam even when the steam-pump assist is
+    // running (pump refills the boiler; output is still steam), so STEAMING
+    // takes precedence and HOT WATER requires a sub-boiling boiler.
+    const bool steaming = valveOpen && st.temperature > 100.0f;
+    const bool hotWater = valveOpen && !steaming && st.pumpActive && !st.brewValveOpen && st.flow > 0.05f;
     const bool boilerOn = st.targetTemp > 0.5f;
     const bool heating = boilerOn && st.temperature < st.targetTemp - 1.0f;
     const bool ready = boilerOn && !heating;
@@ -401,9 +404,11 @@ void MachinePanel::render(SDL_Renderer *r, int offsetX, uint32_t nowMs) {
     for (int i = 0; i < 3; i++) {
         const int x = PX(switchX(i)), y = SW_Y;
         // Lamp above the switch: firmware-driven status LED (J6 GPIO through the
-        // LedControl channel), replacing the stock neons. 0=off, 128=blink 1Hz,
-        // 255=solid. Channel index matches switch index (0 brew, 1 steam, 2 water).
-        const bool lampOn = st.led[i] == 255 || (st.led[i] > 0 && st.led[i] < 255 && (nowMs / 500) % 2 == 0);
+        // LedControl channel), replacing the stock neons. 0=off, 255=solid,
+        // 128=slow blink (heating), 64=fast blink (over temp). Channel index
+        // matches switch index (0 brew, 1 steam, 2 water).
+        const uint32_t halfPeriod = st.led[i] == 64 ? 125 : 500;
+        const bool lampOn = st.led[i] == 255 || (st.led[i] > 0 && st.led[i] < 255 && (nowMs / halfPeriod) % 2 == 0);
         fillCircle(r, x + SW_W / 2, y - 16, 7, lampOn ? COL_LAMP_ON : COL_LAMP_OFF);
         if (lampOn)
             fillCircle(r, x + SW_W / 2, y - 16, 11, COL_LAMP_ON, 60); // glow

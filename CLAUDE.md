@@ -116,6 +116,10 @@ The fork is ~15 commits ahead of upstream (fork point: upstream PR #827). Commit
 
 **LVGL UI**: regenerated from `eez-ui/gaggimate.eez-project` with a Rancilio look + `ui_image_rancilio` boot logo (the huge eez image-file diffs are regeneration artifacts, not hand edits).
 
+## Note-taking (required)
+
+The user wants meticulous notes on everything. Append a dated entry to `WORKLOG.md` (repo root, reverse-chronological) for every working session: what changed and why, decisions with rejected alternatives, sim/test verification results, pending items. Commit the worklog entry together with the change it describes. Promote durable facts (pinouts, semantics, commands) into this file. Git workflow: commit locally only, **never push** — the user pushes via GitHub Desktop; flag "push needed" with the commit hash and track it under Pending in the worklog.
+
 ## Upstream & licensing
 
 Sync against `upstream` (jniebuhr/gaggimate) with rebase/merge onto `master`. Upstream contributions require a signed CLA (via Discord). License: CC BY-NC-SA 4.0.

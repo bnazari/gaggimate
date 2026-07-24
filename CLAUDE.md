@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 GaggiMate is an ESP32-based smart controller for espresso machines. This is **bnazari's fork** (`origin`) of `jniebuhr/gaggimate` (`upstream`), adapted for a **Rancilio Silvia**. The sim, native tests, nanopb comms, and embedded WebUI are **upstream** features (their `[GM-xxx]` comment tags reference upstream's Linear workspace); the fork's own delta is catalogued in "Fork changes vs upstream" below. Fork-added code marks itself with "(this fork)" in comments — keep doing that so divergences stay greppable.
 
 Two separate ESP32 firmwares talk to each other over BLE:
-- **Display** (`src/display/`, board LilyGo-T-RGB) — LVGL touchscreen UI, WiFi, web server, plugins. The brains: profiles, brew orchestration, PID setpoint decisions.
+- **Display** (`src/display/`) — LVGL touchscreen UI, WiFi, web server, plugins. The brains: profiles, brew orchestration, PID setpoint decisions. Built with `-e display` (LilyGo-T-RGB env), but the actual hardware (verified 2026-07-24) is a **466×466 round AMOLED with CST9217 touch** — the firmware's driver autodetect picks `AmoledDisplayDriver` at runtime, no config change needed.
 - **Controller** (`src/controller/` + `lib/GaggiMateController/`) — the machine-side board driving heater/pump/valve peripherals with safety mechanisms (thermal runaway shutoff).
 
 The BLE protocol is nanopb protobuf: schema at `lib/NanoPbComm/proto/gaggimate.proto`, with `gaggimate.pb.{c,h}` generated **at build time** (never committed) via `custom_nanopb_protos` in platformio.ini.

@@ -6,6 +6,41 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-07-24 — First hardware: display arrived, flashed and verified
+
+**Context:** Display unit arrived today (controller board still pending). First time any
+fork firmware runs on real hardware.
+
+**Done:**
+- Built display firmware (`pio run -e display`, clean, ~51 s) and flashed over USB
+  (`/dev/cu.usbmodem2101`). Web assets in `src/display/webassets/` were current
+  (built Jul 22, nothing in `web/` newer), so no `build_webui.sh` rerun needed.
+- Verified boot via serial capture: display initializes, Rancilio boot logo shows,
+  UI lands on "waiting for connection" (BLE scan for the absent controller — expected).
+- **Hardware finding:** the unit is NOT a LilyGo T-RGB — firmware autodetected a
+  **466×466 round AMOLED panel with CST9217 touch** (Waveshare/LilyGo AMOLED variant,
+  chip type 0x9217, ProjectID 0x5734, `AmoledDisplayDriver`). Autodetect handled it;
+  no config change needed. CLAUDE.md's "board LilyGo-T-RGB" note is about the build
+  env default, but actual hardware differs — worth remembering for driver-related work.
+- First-boot state confirmed: fresh NVS (all `NOT_FOUND` reads, expected), AP mode
+  up — SSID `GaggiMate`, generated password `vHpSWjvjQo`, web UI at `http://4.4.4.1/`
+  with captive portal. NetworkWatchdog healthy (heap ~96 KB free, egress ok).
+- Benign boot errors noted: SD card init fail 0x107 (no card present) and missing
+  `/littlefs/h/recent.bin` (no shot history yet).
+
+**Serial-capture gotcha (macOS, native USB CDC):** pulsing RTS resets the ESP32-S3,
+which drops the USB port mid-read (`Errno 6 Device not configured`); the port
+re-enumerates a few seconds later. To capture a boot log: open port, pulse
+DTR=0/RTS=1→0, then reopen after re-enumeration and keep reading.
+
+**Pending:**
+- Controller board still not arrived — BLE pairing, buttons/LEDs, and brew flow
+  untestable on hardware until then.
+- No code changes this session; this worklog entry is the only commit. Push needed
+  (hash below once committed).
+
+---
+
 ## 2026-07-23 — Migration from claude.ai Project to Claude Code
 
 **Context:** All prior fork development happened in a standard claude.ai Project (patch-based

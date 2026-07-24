@@ -6,6 +6,60 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-07-24 (later) — Mock controller on spare XIAO ESP32-C3
+
+**Context:** Real controller board still not arrived; user has a spare Seeed XIAO
+ESP32-C3. Built a mock controller firmware so the display can be bench-tested
+end-to-end over real BLE.
+
+**Done:**
+- New `src/controller-mock/main.cpp` (this fork) + `[env:controller-mock]` in
+  platformio.ini (board `seeed_xiao_esp32c3`): glues the real protocol stack
+  (`GaggiMateServer` from lib/NanoPbComm, advertising as `GPBLS`, capabilities
+  dimming+pressure to mirror Pro Rev 1.1) to the desktop sim's thermal/hydraulic
+  model — `sim/comms/MockController.cpp` compiled in directly via
+  `build_src_filter` (`+<../sim/comms/MockController.cpp>` + `-I sim/comms`),
+  no code duplication. Hardware string honestly says "GaggiMate Mock (XIAO
+  ESP32-C3)" — display only gates behavior on capabilities/protocol version,
+  not the name.
+- Serial console stands in for the Silvia front panel: `b`/`s`/`w` tap
+  brew/steam/water, `B`/`S`/`W` toggle a held press (tests the 2 s long-press
+  flush), `v` wand valve, `t` state dump, `h` help.
+- **Protocol gotcha handled:** the endpoint's `CoalescingPriorityQueue` coalesces
+  button messages by (tag, index), so a press+release sent back-to-back would
+  collapse to just the release. Taps therefore space press→release by 120 ms
+  (> the 15 ms send-pump interval).
+- Compatibility notes: `GaggiMateServer` pins its pump task to core 0 (fine on
+  single-core C3); `ble_ota_dfu` pins its install task to core **1**, which
+  would fail on the C3 — but only on the OTA-install path, which the mock never
+  exercises. Don't try BLE OTA against the mock.
+- Build clean (587 KB flash / 44.8%, 28.8 KB RAM), flashed to the XIAO.
+- **Verified end-to-end: display connected over BLE and left "waiting for
+  connection" (user-confirmed on the physical display).**
+
+**C3 serial-monitor trap (important):** the ESP32-C3's USB-Serial-JTAG drops
+into the ROM bootloader (`boot:0x0 USB_BOOT`, "wait usb download") when the
+host toggles DTR/RTS on port open/close — a plain pyserial open/close bricked
+the session twice until reset via
+`esptool.py --chip esp32c3 --port ... --after hard_reset chip_id`.
+Fixed for interactive use with `monitor_dtr = 0` / `monitor_rts = 0` in the
+env; use `pio device monitor -e controller-mock` to get the button console.
+
+**Decisions:**
+- Reused sim's MockController rather than porting the real GaggiMateController
+  lib to the C3: the real lib drives physical peripherals (MAX31855, pumps) and
+  would run headless into sensor faults; the sim model is the intended
+  "machine-in-software" and keeps one source of truth for mock physics.
+- Autotune request answered immediately with canned PID values (25/0.6/120/0)
+  so the display UI flow completes instead of hanging.
+
+**Pending:**
+- Push needed (commit hash recorded on commit).
+- Nice-to-have: physical buttons/LEDs on the XIAO's free GPIOs instead of the
+  serial console, if bench-testing the momentary logic gets tedious.
+
+---
+
 ## 2026-07-24 — First hardware: display arrived, flashed and verified
 
 **Context:** Display unit arrived today (controller board still pending). First time any

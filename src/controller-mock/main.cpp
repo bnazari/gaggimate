@@ -13,10 +13,13 @@
 //   h / ?       help
 #include "GaggiMateServer.h"
 #include "MockController.h"
+#include "version.h" // BUILD_GIT_VERSION, written pre-build by auto_firmware_version.py
 #include <Arduino.h>
 
 #ifndef BUILD_GIT_VERSION
-#define BUILD_GIT_VERSION "dev"
+// Semver-shaped so the display's OTA version compare can parse it; a bare
+// "dev" used to abort() the display (see lib/OTA semver_extensions guard).
+#define BUILD_GIT_VERSION "v0.0.0-mock"
 #endif
 
 namespace {

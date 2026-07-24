@@ -6,6 +6,42 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-07-24 (evening) — Display boot-loop postmortem: semver abort on mock's "dev" version
+
+**Symptom:** After the user configured WiFi via the display's web UI, the display
+entered a boot loop. WiFi looked like the culprit (timing), but serial capture
+showed WiFi connecting fine (STA + IP) — the abort() fired the moment the display
+received the mock controller's system info, every boot.
+
+**Root cause (display firmware, upstream code):** the mock advertised version
+`"dev"` (the `BUILD_GIT_VERSION` define never reached the mock build — my
+fallback kicked in; `auto_firmware_version.py` writes `src/version.h`, which
+`controller-mock/main.cpp` didn't include). On connect, `WebUIPlugin` calls
+`GitHubOTA::setControllerVersion("dev")` → `from_string("ev")` in
+`lib/OTA/src/semver_extensions.cpp` → `split(...)` yields 1 element →
+`numbers.at(1)` throws `std::out_of_range` → `abort()` → reboot → BLE
+reconnect → repeat. Any controller reporting a non-semver version boot-loops
+the display; **upstream-relevant bug.**
+
+**Fixes (commit below):**
+- `semver_extensions.cpp`: guard `numbers.size() < 3` → return 0.0.0 instead of
+  throwing. Display now survives any malformed version string.
+- `controller-mock/main.cpp`: `#include "version.h"` so the mock reports the
+  real `git describe` version (`v1.8.1-166-g…`), fallback changed to the
+  semver-shaped `v0.0.0-mock`.
+
+**Verification:** both firmwares rebuilt + reflashed. Display up >98 s, no
+abort; `curl http://10.0.1.114/api/status` → `{"mode":0,"tt":0,"ct":21}` —
+live sensor stream from the mock (21 °C = MockController ambient). WiFi
+(AirCanada) + web UI on LAN confirmed working; the "password caused it" theory
+was a timing coincidence.
+
+**Pending:**
+- Push needed: 2f90dcca (mock controller) + this commit.
+- Consider offering the semver guard upstream (needs CLA via Discord).
+
+---
+
 ## 2026-07-24 (later) — Mock controller on spare XIAO ESP32-C3
 
 **Context:** Real controller board still not arrived; user has a spare Seeed XIAO

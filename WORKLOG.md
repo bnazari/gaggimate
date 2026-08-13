@@ -90,6 +90,12 @@ sim: boots clean, `proto=4 local=4`, no protocol mismatch, WebUI on localhost:80
 - Mock controller (XIAO C3) reports protocol 4 only after reflashing it from this
   branch; an old mock (proto 3) will now trip the display's protocol-mismatch path.
 
+**Hardware status (2026-08-13):** controller board, display, and load sensors arrive
+2026-08-14. Plan: modify the Silvia front-panel buttons to momentary-with-LED per the
+J6 wiring diagram (CLAUDE.md), tabletop-test the full stack (buttons, LEDs, hardware
+scale, calibration) before installing in the machine. 3D-printed parts for the
+hardware-scale (drip tray) mount still printing.
+
 ---
 
 ## 2026-07-24 (evening) — Display boot-loop postmortem: semver abort on mock's "dev" version

@@ -7,6 +7,9 @@
 
 #include <utility>
 
+constexpr uint32_t ADDON_GEARPUMP = 7;
+constexpr uint32_t ADDON_HW_SCALE = 8;
+
 GaggiMateController::GaggiMateController(String version) : _version(std::move(version)) {
     configs.push_back(GM_STANDARD_REV_1X);
     configs.push_back(GM_STANDARD_REV_2X);
@@ -51,6 +54,14 @@ void GaggiMateController::setup() {
     // ("water" in the display's default button behavior mapping). Dry contact to
     // GND; DigitalInput enables the internal pull-up and reports pressed = low.
     this->waterBtn = new DigitalInput(_config.ext4Pin, [this](const bool state) { _comms.sendButtonState(2, state); });
+    this->hardwareScale = new HardwareScale(
+        _config.scaleSdaPin, _config.scaleSda1Pin, _config.scaleSclPin,
+        [this](float weight) {
+            if (_comms.isConnected()) {
+                _comms.sendScaleMeasurement(weight);
+            }
+        },
+        [](float, float) {});
 
     // 4-Pin peripheral port
     albaComms = new SoftWire(_config.sunriseSdaPin, _config.sunriseSclPin);
@@ -83,11 +94,25 @@ void GaggiMateController::setup() {
     capabilities.pressure = _config.capabilites.pressure;
     capabilities.tof = _config.capabilites.tof;
     capabilities.led_control = _config.capabilites.ledControls;
+
+    this->hardwareScale->setup();
+
+    auto addAddon = [&capabilities](uint32_t type) {
+        const auto maxAddons = sizeof(capabilities.addons) / sizeof(capabilities.addons[0]);
+        if (capabilities.addons_count >= maxAddons) {
+            return;
+        }
+        capabilities.addons[capabilities.addons_count] = gaggimate_Addon_init_zero;
+        capabilities.addons[capabilities.addons_count].type = type;
+        capabilities.addons_count++;
+    };
     if (this->gearpumpAddon != nullptr) {
-        capabilities.addons_count = 1;
-        capabilities.addons[0] = gaggimate_Addon_init_zero;
-        capabilities.addons[0].type = 7;
+        addAddon(ADDON_GEARPUMP);
     }
+    if (this->hardwareScale->isAvailable()) {
+        addAddon(ADDON_HW_SCALE);
+    }
+
     _comms.init("GPBLS", _config.name.c_str(), _version, capabilities);
 
     if (_config.capabilites.ledControls) {
@@ -239,11 +264,20 @@ void GaggiMateController::setup() {
         this->heater->autotune(static_cast<int>(testTimeSec), static_cast<int>(windowSize), static_cast<int>(heaterWattage));
     });
     _comms.onTare([this]() {
+        if (hardwareScale != nullptr && hardwareScale->isAvailable()) {
+            hardwareScale->tare();
+        }
         if (!_config.capabilites.dimming) {
             return;
         }
         auto dimmedPump = static_cast<DimmedPump *>(pump);
         dimmedPump->tare();
+    });
+    _comms.onScaleFactors([this](float scaleFactor1, float scaleFactor2) {
+        if (hardwareScale == nullptr || !hardwareScale->isAvailable()) {
+            return;
+        }
+        hardwareScale->setScaleFactors(scaleFactor1, scaleFactor2);
     });
     ESP_LOGI(LOG_TAG, "Initialization done");
 }
@@ -266,6 +300,17 @@ void GaggiMateController::updateModeLedOutputs() {
 void GaggiMateController::loop() {
     unsigned long now = millis();
     updateModeLedOutputs();
+
+    // Keep zero tracking and idle display quantization out of the measurement
+    // path whenever the brew valve or pump can be adding liquid to the cup.
+    if (hardwareScale != nullptr) {
+        const float pumpPower =
+            pump != nullptr && pump->getPumpPowerPtr() != nullptr ? *pump->getPumpPowerPtr() : 0.0f;
+        const bool scaleActivity =
+            (valve != nullptr && valve->getState()) || pumpPower > 0.01f;
+        hardwareScale->setBrewingActive(scaleActivity);
+    }
+
     if (lastPingTime < now && (now - lastPingTime) / 1000 > PING_TIMEOUT_SECONDS) {
         handlePingTimeout();
     }

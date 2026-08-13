@@ -22,6 +22,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <firmware_brand.h>
 #include <version.h>
 
 // Incoming WebSocket payloads (profile uploads reserve up to 64 KB) are
@@ -120,9 +121,9 @@ void WebUIPlugin::setup(Controller *_controller, PluginManager *_pluginManager) 
         broadcastJson(doc);
     });
 
-    // Subscribe to Bluetooth scale weight updates
-    pluginManager->on("controller:volumetric-measurement:bluetooth:change",
-                      [this](Event const &event) { this->currentBluetoothWeight = event.getFloat("value"); });
+    // Subscribe to volumetric measurement updates (hardware, bluetooth, or estimation)
+    pluginManager->on("controller:volumetric-measurement:active:change",
+                      [this](Event const &event) { this->currentWeight = event.getFloat("value"); });
 
     setupServer();
 }
@@ -166,6 +167,8 @@ void WebUIPlugin::loop() {
         statusDoc["cp"] = controller->getSystemInfo().capabilities.pressure;
         statusDoc["cd"] = controller->getSystemInfo().capabilities.dimming;
         statusDoc["gp"] = controller->getSystemInfo().capabilities.hasAddon(7);
+        statusDoc["hs"] = controller->getSystemInfo().capabilities.hwScale;
+        statusDoc["scaleSource"] = controller->getActiveScaleSourceName();
         statusDoc["tw"] = profileManager->getSelectedProfile().getTotalVolume(); // total target weight for the process
         statusDoc["bta"] = controller->isVolumetricAvailable() ? 1 : 0;
         statusDoc["bt"] =
@@ -192,8 +195,8 @@ void WebUIPlugin::loop() {
 
         bool bleConnected = BLEScales.isConnected();
         // Add Bluetooth scale weight information
-        statusDoc["bw"] = bleConnected ? this->currentBluetoothWeight : 0; // current bluetooth weight
-        statusDoc["cw"] = bleConnected ? this->currentBluetoothWeight : 0; // Use 'currentWeight' for forward compatbility
+        statusDoc["bw"] = this->currentWeight;
+        statusDoc["cw"] = this->currentWeight;
         statusDoc["bc"] = bleConnected;                                    // bluetooth scale connected status
         // Scale battery — only surfaced when the driver reports one and the
         // value isn't the UNKNOWN sentinel (255). UI omits the battery pill
@@ -539,6 +542,8 @@ void WebUIPlugin::handleWebSocketData(AsyncWebSocket *server, AsyncWebSocketClie
                     client->text(toWsBuffer(resp));
                 } else if (msgType == "req:flush:start") {
                     handleFlushStart(client->id(), doc);
+                } else if (msgType == "req:scale:tare") {
+                    controller->getClientController()->tare();
                 }
             }
         }
@@ -673,6 +678,19 @@ void WebUIPlugin::handleSettings(AsyncWebServerRequest *request) const {
                 settings->setTemperatureOffset(request->arg("temperatureOffset").toInt());
             if (request->hasArg("pressureScaling"))
                 settings->setPressureScaling(request->arg("pressureScaling").toFloat());
+            if (request->hasArg("scaleFactor1") || request->hasArg("scaleFactor2")) {
+                float sf1 = settings->getScaleFactor1();
+                float sf2 = settings->getScaleFactor2();
+                if (request->hasArg("scaleFactor1")) {
+                    sf1 = request->arg("scaleFactor1").toFloat();
+                }
+                if (request->hasArg("scaleFactor2")) {
+                    sf2 = request->arg("scaleFactor2").toFloat();
+                }
+                settings->setScaleFactors(sf1, sf2);
+            }
+            if (request->hasArg("preferredScaleSource"))
+                settings->setPreferredScaleSource(request->arg("preferredScaleSource"));
             if (request->hasArg("pid"))
                 settings->setPid(request->arg("pid"));
             if (request->hasArg("pumpModelCoeffs"))
@@ -807,6 +825,7 @@ void WebUIPlugin::handleSettings(AsyncWebServerRequest *request) const {
         });
         pluginManager->trigger("settings:changed");
         controller->setTargetTemp(controller->getTargetTemp());
+        controller->setScaleFactors();
         controller->setPumpModelCoeffs();
     }
 
@@ -833,6 +852,9 @@ void WebUIPlugin::handleSettings(AsyncWebServerRequest *request) const {
     doc["mdnsName"] = settings.getMdnsName();
     doc["temperatureOffset"] = String(settings.getTemperatureOffset());
     doc["pressureScaling"] = String(settings.getPressureScaling());
+    doc["scaleFactor1"] = settings.getScaleFactor1();
+    doc["scaleFactor2"] = settings.getScaleFactor2();
+    doc["preferredScaleSource"] = settings.getPreferredScaleSource();
     doc["boilerFillActive"] = settings.isBoilerFillActive();
     doc["startupFillTime"] = settings.getStartupFillTime() / 1000;
     doc["steamFillTime"] = settings.getSteamFillTime() / 1000;
@@ -965,6 +987,8 @@ void WebUIPlugin::updateOTAStatus(const String &version) {
     doc["displayVersion"] = BUILD_GIT_VERSION;
     doc["controllerVersion"] = controller->getSystemInfo().version;
     doc["hardware"] = controller->getSystemInfo().hardware;
+    doc["firmwareFlavor"] = GM_FIRMWARE_FLAVOR;
+    doc["otaSource"] = GM_OTA_SOURCE;
     doc["latestVersion"] = ota->getCurrentVersion();
     doc["channel"] = settings.getOTAChannel();
     doc["updating"] = updating;

@@ -6,6 +6,84 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-08-13 — Merged dragm83's hardware-scales feature; review + build verification
+
+**Context:** User merged `dragm83/features/hw-scales` (new remote, github.com/dragm83/gaggimate)
+into new branch `hw_scale` (merge commit 1873c9b5, parents 0f49be02 = our switch_mods tip
+and ae94fb0e = dragm83's tip; already pushed to origin). This session: full review of what
+came in, whether our fork's features survived, and compile verification.
+
+**What the feature is:** built-in drip-tray scale — two HX711 load-cell amplifiers
+bit-banged on the Pro board's "screen header" pins (shared clock GPIO17 = `scaleSclPin`,
+data GPIO18/GPIO39 = `scaleSdaPin`/`scaleSda1Pin`; upstream's config already reserved
+these names, only `HardwareScale` uses them). Ten commits from dragm83:
+
+- `lib/GaggiMateController/src/peripherals/HardwareScale.{h,cpp}` (new): 100 ms read
+  task, outlier rejection + EMA (α 0.70), idle display quantization (0.1 g steps),
+  idle-only zero-drift tracking (disabled while pump/valve active via
+  `setBrewingActive()`, driven from `GaggiMateController::loop()`), read-failure
+  recovery, tare, per-cell calibration. If HX711s aren't ready at boot, setup aborts
+  cleanly → `isAvailable()` false → **no addon advertised, feature dormant. Safe on our
+  machine, which has no load cells connected.**
+- Protocol: `PROTOCOL_VERSION` 3 → 4. New messages `ScaleFactors` (display→controller,
+  tag 12) and `ScaleMeasurement` (controller→display, tag 27, PRIO_LOW/unreliable) —
+  hardware weight is a channel separate from pump-derived `VolumetricMeasurement`, so
+  both coexist. Addon id 8 = HW scale (7 = gearpump). Sim client bumped to 4 too.
+- Display: `VolumetricMeasurementSource::HARDWARE` added; source arbitration
+  (`getActiveScaleSource()`: preferred source if healthy → fall back hardware → BT;
+  grind always BT — hardware scale is under the drip tray, not the grinder). New
+  settings `sf1`/`sf2`/`pss` (preferred source, default "hardware"). New event
+  `controller:volumetric-measurement:active:change` consumed by DefaultUI/WebUI/
+  ShotHistory instead of the bluetooth-specific event. Health = measurement seen in
+  last 1.5 s (`HARDWARE_GRACE_PERIOD_MS`).
+- Web UI: Settings → Machine gets a "Scales" section (preferred source dropdown always;
+  tare + two-point per-cell calibration UI only when controller advertises the addon).
+  System tab shows "Installed distribution: Hardware Scales fork" banner and a confirm
+  dialog before OTA (OTA source is still official GaggiMate → would replace the fork).
+- Release infra (inert for us): `.github/workflows/hardware-scales.yml` triggers only on
+  branch `features/hw-scales` or tags `v*-hwscales.*`; `docs/hardware-scales-flasher/`
+  esp-web-tools flasher; `auto_firmware_version.py` falls back to
+  `v0.0.0-hwscales.N+gSHA` when no tag reachable; upstream `build.yml` skips
+  `-hwscales.` tags. `src/firmware_brand.h` defines flavor strings shown in the web UI.
+
+**Merge quality — our fork's delta survived intact** (verified by grep + diff):
+waterBtn/button index 2, LED channels 8–10 + `updateModeLedOutputs()`, `detectAddon()`
+removal, momentary long-press flush + `checkBrewButtonLongPress()`, `updateModeLeds()`
+hysteresis, sim MachinePanel. Manual conflict resolutions were in
+`GaggiMateController.{cpp,h}`, `Controller.{cpp,h}`, `sim/comms/GaggiMateClient.h` —
+all look correct. dragm83's tare handler composes with ours (hardware scale tares
+first, then DimmedPump volumetric tare).
+
+**Review findings (small, none blocking):**
+1. `DefaultUI::updateSystemStatus()` lost upstream's `stringChanged()` guards on
+   `controller_version`/`display_version` — dragm83 removed them in their branch, and
+   the 3-way merge correctly propagated that. Now re-sets two EEZ strings every render
+   tick; candidate fixup (string churn was guarded upstream for heap-fragmentation
+   reasons).
+2. `Controller::currentCoffeeVolume` is now dead — `onVolumetricMeasurement` no longer
+   writes it and nothing calls `getCurrentCoffeeVolume()`. Dead code, candidate cleanup.
+3. `ShotHistoryPlugin.cpp:92` has a stray-indentation artifact from dragm83 (cosmetic;
+   `scripts/format.sh` would fix).
+4. Non-nightly behavior change: flow-estimation measurements now early-return in
+   `onVolumetricMeasurement` (they only feed shot-history estimation events on nightly
+   builds). Intentional in dragm83's design; noting since brew-by-weight without any
+   scale still falls back to time-based targets.
+
+**Verification:** `pio run -e controller` and `pio run -e display` both build clean on
+the merge. WebUI not rebuilt yet — `src/display/webassets/` is stale; **run
+`scripts/build_webui.sh` before flashing the display** or the new Scales settings UI
+won't be embedded.
+
+**Pending:**
+- Push needed: this worklog commit (hash in git log) — branch `hw_scale` itself is
+  already on origin.
+- Run `scripts/build_webui.sh` + rebuild display before next flash.
+- Optional fixups: findings 1–3 above.
+- Mock controller (XIAO C3) reports protocol 4 only after reflashing it from this
+  branch; an old mock (proto 3) will now trip the display's protocol-mismatch path.
+
+---
+
 ## 2026-07-24 (evening) — Display boot-loop postmortem: semver abort on mock's "dev" version
 
 **Symptom:** After the user configured WiFi via the display's web UI, the display

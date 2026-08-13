@@ -87,6 +87,9 @@ class GaggiMateClient {
                           float maxPower, float slipA, float slipB, float slipC, float slipD);
     void sendAutotune(uint32_t testTime, uint32_t samples, uint32_t heaterWattage);
     void sendPressureScale(float scale);
+    // The mock controller doesn't advertise the hardware-scale addon, so the
+    // firmware never has factors to configure; accept and drop the message.
+    void sendScaleFactors(float, float) {}
     void tare();
     void sendLedControl(const LedChannelCommand *channels, size_t count);
 

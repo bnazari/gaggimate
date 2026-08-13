@@ -74,6 +74,14 @@ the merge. WebUI not rebuilt yet — `src/display/webassets/` is stale; **run
 `scripts/build_webui.sh` before flashing the display** or the new Scales settings UI
 won't be embedded.
 
+**Sim fix (same day, follow-up commit):** `display-sim` didn't build after the merge —
+the merge resolution added `onScaleMeasurement` to the sim's mock BLE client but not
+`sendScaleFactors`, which `Controller::setScaleFactors()` now calls. Added it as a
+documented no-op in `sim/comms/GaggiMateClient.h` (the mock never advertises addon 8,
+so the firmware has no factors to send; a full sim-side hardware scale wasn't worth it).
+Rebuilt webassets via `scripts/build_webui.sh` (67 assets, 641,905 B) and launched the
+sim: boots clean, `proto=4 local=4`, no protocol mismatch, WebUI on localhost:8080.
+
 **Pending:**
 - Push needed: this worklog commit (hash in git log) — branch `hw_scale` itself is
   already on origin.

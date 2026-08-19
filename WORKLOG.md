@@ -96,6 +96,11 @@ J6 wiring diagram (CLAUDE.md), tabletop-test the full stack (buttons, LEDs, hard
 scale, calibration) before installing in the machine. 3D-printed parts for the
 hardware-scale (drip tray) mount still printing.
 
+**Update (2026-08-18):** installing *without* load cells for now (scale-mount prints
+not done). Safe: HardwareScale probes only at boot — no HX711s → addon dormant, no
+behavior change vs pre-merge. When cells are added later: wire, then power-cycle the
+controller; scale UI appears in web Settings → Machine once addon 8 is advertised.
+
 ---
 
 ## 2026-07-24 (evening) — Display boot-loop postmortem: semver abort on mock's "dev" version

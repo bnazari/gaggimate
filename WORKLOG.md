@@ -6,6 +6,34 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-08-19 (later) — Water-mode fixes: pump toggle "not working" + pump-off on mode exit
+
+**Bench report:** (1) in water mode, second button tap doesn't start/stop the pump
+(works in sim); (2) pump should stop when switching out of water mode.
+
+**(1) is configuration, not code:** `momentaryButtons` defaults to false
+(Settings.h `Property<bool> momentaryButtons{registry, "mb", false}`) and the real
+display has fresh NVS — in latching mode a momentary push button starts the pump on
+press and stops it on release ~150 ms later, i.e. "nothing happens". The sim's
+sim_data has momentary=true, hence the difference. Remedy: enable web UI → Settings →
+General → "Momentary buttons". NOTE: did NOT set it via a partial POST to
+/api/settings — WebUIPlugin sets booleans by arg *presence* (homekit, boilerFill,
+momentaryButtons, ...), so a partial POST would silently disable the others. Full-form
+save from the web UI only.
+
+**(2) fixed in `setMode()` (this fork):** leaving MODE_WATER with an active process
+now deactivates first. The brew button and web UI change-mode already deactivated
+before switching; the steam button (`handleSteamButton` → `setMode` directly) and the
+touch UI did not, leaving the pump running into the new mode. Guard placed in
+`setMode()` so every exit path is covered; double-deactivate is harmless (no-op on
+null process).
+
+**Verification:** display build clean; flash + bench test pending (water pump on →
+press steam button → pump must stop; also re-test water toggle after enabling
+momentary buttons).
+
+---
+
 ## 2026-08-19 — Mode-LED audit: stale lamp after mode switch (bench report)
 
 **Report (user, hardware bench):** pressing a button switches the mode, but the lamp

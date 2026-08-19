@@ -1234,6 +1234,12 @@ int Controller::getMode() const { return mode; }
 
 void Controller::setMode(int newMode) {
     Event modeEvent = pluginManager->trigger("controller:mode:change", "value", newMode);
+    // Leaving water mode stops a running pump (this fork). The brew button and
+    // web UI deactivate before switching, but the steam button and touch UI
+    // call setMode() directly and would leave the pump running into the new mode.
+    if (mode == MODE_WATER && modeEvent.getInt("value") != MODE_WATER && isActive()) {
+        deactivate();
+    }
     mode = modeEvent.getInt("value");
     steamReady = false;
 

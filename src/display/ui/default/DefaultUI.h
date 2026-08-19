@@ -122,6 +122,10 @@ class DefaultUI {
     float targetTemp = 0.0f;
     double activeWeight = 0.0;
     BrewScreenState brewScreenState = BrewScreenState::Brew;
+    // Last-seen LVGL checked states for the play/pause imgbtns; see the
+    // invalidate-on-change workaround in loop(). (this fork)
+    bool waterBtnChecked = false;
+    bool grindBtnChecked = false;
 
     // EEZ Structs
     SystemStatusValue systemStatus;

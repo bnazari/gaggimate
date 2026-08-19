@@ -6,6 +6,51 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-08-19 (evening) — "Water button not working" root cause: LVGL imgbtn never repaints on programmatic state change
+
+**Symptom (bench):** water button appeared dead — mode switched but the play icon
+never changed, so the pump looked like it never started. Worked in the sim.
+
+**Evidence chain (throwaway diagnostic build with UIDBG logging, since reverted):**
+1. Live WS telemetry: physical taps DID arrive and DID toggle the pump process
+   (process a:1, pump command 100%) — the entire button→BLE→activate() pipeline is
+   healthy on hardware.
+2. UIDBG logs: `ui_flags.active` propagated, `evalBooleanProperty` returned the right
+   value, and `lv_obj_add_state(LV_STATE_CHECKED)` was applied — LVGL *state* was
+   correct the whole time.
+3. Controlled blink test (remote activate/deactivate, 6 s cycles): state toggled,
+   physical icon frozen on play. Touching the on-screen button DID flip the icon
+   (user-confirmed) — the discriminating fact.
+
+**Root cause (upstream-relevant, LVGL 8.4):** `lv_imgbtn` refreshes its drawn source
+on touch events (PRESSED/RELEASED) and on STYLE_CHANGED, but a programmatic
+`lv_obj_add_state(LV_STATE_CHECKED)` emits STYLE_CHANGED only if some style property
+differs between states. The EEZ-generated water/grind start buttons have identical
+styles in both states (images are widget-internal, not styles), so the state change
+never invalidates the widget. The sim's SDL renderer effectively redraws full frames,
+masking the bug; the AMOLED panel's partial refresh preserves the stale icon forever.
+
+**Fix (this fork):** `DefaultUI::loop()` invalidates `water_start_button` /
+`grind_start_button` whenever their LVGL checked state flips (checked *after*
+`ui_tick()` so the state is already applied); tracking members in DefaultUI.h.
+Lives in hand-written code so EEZ regeneration can't clobber it. The grind button
+had the identical latent bug. Alternative proper fix for later: give the buttons a
+distinct CHECKED-state style in EEZ Studio so LVGL sees a style diff.
+
+**Verification:** blink test repeated on the fixed build — icon alternates; physical
+water-button taps toggle pump + icon (user-confirmed "working now").
+
+**Also learned along the way (recorded for future bench work):**
+- Opening the display's USB serial port resets it (USB-CDC) — every capture reboots
+  the display and clears any latched error state; don't let that confound tests.
+- The 5-minute free-test capture recorded ~30 s of continuous active pump with
+  correct internal state — consistent with the rendering diagnosis.
+- Earlier suspicion of ghost water-button events is unproven; all logged button
+  events were clean press/release pairs. Keep an eye on it once mains/pump EMI
+  exists.
+
+---
+
 ## 2026-08-19 (later) — Water-mode fixes: pump toggle "not working" + pump-off on mode exit
 
 **Bench report:** (1) in water mode, second button tap doesn't start/stop the pump

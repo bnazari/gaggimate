@@ -29,11 +29,16 @@ the display. Candidate for upstream (needs CLA).
 tracks the link-drop transition; `handlePing()` clears it. `errorState` writes left
 as-is (RUNAWAY/TIMEOUT can still ping-pong in logs while disconnected; harmless).
 
-**Verification:** (results below in this entry after reflash)
-- controller: exactly one "Ping timeout detected" after ~27 s, no spam;
-- display: `System info: ... Pro Rev 1.1 (proto=4 local=4)`, stable link, mismatch
-  screen gone; thermal-runaway error shown on display is *correct* until a
-  thermocouple is wired to T+/T−.
+**Verification (reflashed 9a5afe94, dual 50 s serial captures):**
+- controller: "Client connected" at t≈10 s, **zero** ping-timeout lines in 50 s
+  (previously 250 ms spam from t≈29 s), link stable throughout;
+- display: "Connected, MTU: 256" → `System info: GaggiMate Pro Rev 1.1
+  v1.8.1-183-g9a5afe94 (proto=4 local=4 dm=1 ps=1 led=0 tof=0)` — real board,
+  protocol match, no mismatch trigger, no disconnects. Thermal-runaway error on
+  the display is *correct* until a thermocouple is wired to T+/T−.
+- Mock note: display's earlier "Version mismatch, update controller" screen can only
+  come from a proto<4 device = the July XIAO mock; keep it unpowered (reflash it from
+  this branch before its next use).
 
 ---
 

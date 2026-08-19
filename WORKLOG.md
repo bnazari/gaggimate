@@ -6,6 +6,52 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-08-19 — Mode-LED audit: stale lamp after mode switch (bench report)
+
+**Report (user, hardware bench):** pressing a button switches the mode, but the lamp
+keeps blinking on the *previous* mode. Not observed in the sim. First hardware test
+was the morning of 8/18 — i.e. overlapping the pre-9a5afe94 window where the
+controller bounced BLE every 250 ms.
+
+**Audit (code review + scripted sim repros, before any change):**
+- Display logic (`updateModeLeds`, Controller.cpp:762) is sound: recomputes all three
+  channels from `getMode()` each control tick, sends the full 3-channel state in one
+  message on any change; every mode-switch path (buttons/touch/web) goes through the
+  synchronous `setMode()`.
+- Empirical: drove the sim over its WS API (`req:change-mode`, same `setMode` path)
+  standby→brew→steam and steam→water with `--screenshot` captures at blink-ON phase
+  (t=14 s/16 s, even half-second). Both correct: only the active mode's lamp lit,
+  matching thermal state (steam slow-blink heating; water solid at 82/80). Repro
+  scripts kept in the session scratchpad (raw-WS client, no deps).
+- Transport audit: one message carries all 3 channels; CoalescingPrioQueue replaces
+  older LED msgs with newer full-state ones (key = tag, index 0); delivery ack'd with
+  retries. Controller applies all channels (GaggiMateServer loops them) and drives
+  ext pins every 250 ms.
+
+**Findings:**
+1. Primary cause of the bench symptom: the pre-fix BLE bounce (see 8/18 entry).
+   `Endpoint::handleConnection()` wipes the outbound queue on every (re)connect
+   (Endpoint.cpp:264), so each LED update sent during the bounce died; button
+   presses got through because the user retries until the mode visibly changes.
+2. Structural hole (fixed today): no LED resync after reconnect. `lastLedState` is
+   updated optimistically at send time (no delivery confirmation; queue-full upsert
+   failures also silent), and on disconnect the display drops to standby →
+   computes all-off → queues it while disconnected → the connect-time queue wipe
+   destroys exactly that message. Reconnect resends PID/pressure/pump/control state
+   but never LEDs. Self-heals only on the next mode/thermal transition.
+   Controller-reboot variant: lamps reset to 0 on the controller, display cache
+   claims they're lit → lamps stay dark.
+
+**Fix:** in `onConnectionChanged(connected)` reset `lastLedState` to the {1,1,1}
+sentinel (same pattern as `controlStateSent = false`), so the first
+`updateModeLeds()` tick after every (re)connect resends full lamp state.
+
+**Verification:** display firmware rebuilt + reflashed; bench re-test by user pending
+(switch modes via buttons; also power-cycle the controller mid-mode to exercise the
+resync).
+
+---
+
 ## 2026-08-18 (later still) — WebUI served garbage: stale .incbin blob object (GM-106 embed path)
 
 **Symptom:** display web server up (HTTP 200, /api/status fine — and it showed the

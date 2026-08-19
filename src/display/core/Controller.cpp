@@ -230,6 +230,11 @@ void Controller::setupBluetooth() {
             // Re-assert the connection interval for the fresh link (e.g. tight
             // again if we reconnected mid-shot).
             applyConnectionPriority(true);
+            // Invalidate the mode-LED cache so the next updateModeLeds() tick
+            // resends the full lamp state: the connect-time outbound-queue wipe
+            // can destroy an in-flight LED update, and a rebooted controller
+            // starts with all lamps off while this cache still claims otherwise.
+            lastLedState[0] = lastLedState[1] = lastLedState[2] = 1;
         } else if (initialized) {
             pluginManager->trigger("controller:bluetooth:disconnect");
             waitingForController = true;

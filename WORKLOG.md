@@ -6,6 +6,37 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-08-18 (later) — BLE-bounce bug: ping timeout × thermal runaway; display couldn't connect
+
+**Symptom:** display flashed OK but could never hold a connection to the real board —
+"Service not found" / `serviceDiscoveredCB() rc=7` / connect status 531/574, endless
+rescan loop. Display briefly showed "Version mismatch, update controller" — that is the
+*protocol* screen (DefaultUI.cpp:753), which only a proto<4 device can trigger; the real
+board is proto 4, so that pairing was with the July XIAO mock (proto 3) — keep the mock
+unpowered on the bench.
+
+**Root cause (controller firmware, upstream-relevant):** bare bench board has no
+thermocouple → `thermalRunawayShutdown()` re-fires every 250 ms loop, setting
+`errorState = RUNAWAY`. After the 20 s ping timeout, `handlePingTimeout()`'s
+disconnect-once-on-transition guard (`errorState != ERROR_CODE_TIMEOUT`) never holds —
+RUNAWAY overwrites TIMEOUT between iterations — so `_comms.disconnect()` fired every
+250 ms forever, killing every display connection mid-service-discovery. Verified by
+45 s serial capture: "Ping timeout detected" spam at 250 ms cadence from t≈29 s.
+Real-world impact: a machine with a broken thermocouple could never show the error on
+the display. Candidate for upstream (needs CLA).
+
+**Fix:** dedicated `pingTimedOut` flag (GaggiMateController.{h,cpp}, "(this fork)")
+tracks the link-drop transition; `handlePing()` clears it. `errorState` writes left
+as-is (RUNAWAY/TIMEOUT can still ping-pong in logs while disconnected; harmless).
+
+**Verification:** (results below in this entry after reflash)
+- controller: exactly one "Ping timeout detected" after ~27 s, no spam;
+- display: `System info: ... Pro Rev 1.1 (proto=4 local=4)`, stable link, mismatch
+  screen gone; thermal-runaway error shown on display is *correct* until a
+  thermocouple is wired to T+/T−.
+
+---
+
 ## 2026-08-18 — Controller board flashed, first boot on real hardware
 
 **Done:** flashed `hw_scale` controller firmware to the real Pro board over USB

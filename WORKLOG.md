@@ -6,6 +6,24 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-08-18 — Controller board flashed, first boot on real hardware
+
+**Done:** flashed `hw_scale` controller firmware to the real Pro board over USB
+(`/dev/cu.usbmodem2101`, `pio run -e controller -t upload`; 694,880 B, hash verified).
+Serial boot capture (pyserial with DTR/RTS held false — same C3-style bootloader trap
+avoided): normal `SPI_FAST_FLASH_BOOT`, **autodetect ID=4 (445 mV) → "GaggiMate Pro
+Rev 1.1"** — matches every pin mapping we've assumed. Installing without load cells
+for now, so HardwareScale is expected to abort setup and stay dormant.
+
+**Expected/benign boot errors on the bare board:** `PCA9634` init failure (no
+Sunrise/Alba LED board on the peripheral port; panel LEDs 8–10 are driven on ext pins
+and don't use it) and a PSRAM-not-found bail (build enables PSRAM, module has none).
+
+**Pending:** tabletop test — buttons/LEDs on J6, display pairing (keep XIAO mock
+unpowered), momentary-mode setting. Push needed: this commit.
+
+---
+
 ## 2026-08-13 — Merged dragm83's hardware-scales feature; review + build verification
 
 **Context:** User merged `dragm83/features/hw-scales` (new remote, github.com/dragm83/gaggimate)

@@ -6,6 +6,30 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-08-18 (later still) — WebUI served garbage: stale .incbin blob object (GM-106 embed path)
+
+**Symptom:** display web server up (HTTP 200, /api/status fine — and it showed the
+thermocouple installed and reading 26.6 °C) but GET / returned 791 bytes of firmware
+.rodata (log format strings), not HTML.
+
+**Root cause:** `web_ui_blob.S` `.incbin`s `web_ui.bin`, but the build system
+fingerprints only the .S text and doesn't know the .bin is a dependency. Timeline:
+display env built 8/13 16:23 (old bundle) → webassets regenerated 16:28 (sim prep) →
+today's display build recompiled the new `web_ui_manifest.h` into WebUIPlugin but
+reused the stale 16:23 blob object. Manifest offsets pointed into a different bundle →
+arbitrary flash bytes served as pages. Upstream-relevant: anyone rebuilding the web UI
+between firmware builds can hit this.
+
+**Fix:** `scripts/embed_webui.py` now stamps a `bundle sha256:` comment into the
+generated .S ("(this fork)" comment in the script), so the .S content — and therefore
+its fingerprint — changes with every bundle. Also deleted the stale object once by
+hand. Regenerated (bundle 77983e29…), rebuilt, reflashed display.
+
+**Verification:** GET / returns real `<!doctype html>` bundle; /api/status live
+(ct=26.75 °C, standby). BLE link to controller unaffected.
+
+---
+
 ## 2026-08-18 (later) — BLE-bounce bug: ping timeout × thermal runaway; display couldn't connect
 
 **Symptom:** display flashed OK but could never hold a connection to the real board —

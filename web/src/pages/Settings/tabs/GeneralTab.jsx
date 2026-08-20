@@ -4,6 +4,7 @@ import { faEyeSlash } from '@fortawesome/free-solid-svg-icons/faEyeSlash';
 import { timezones } from '../../../config/zones.js';
 import { DASHBOARD_LAYOUTS } from '../../../utils/dashboardManager.js';
 import Section from '../../../components/Card.jsx';
+import { handleThemeChange, getAvailableThemes } from '../../../utils/themeManager';
 import {
   InputGroupField,
   SettingsFormField,
@@ -316,11 +317,9 @@ export function GeneralTab({
                 handleThemeChange(e);
               }}
             >
-              <option value='system'>System</option>
-              <option value='light'>Light</option>
-              <option value='dark'>Dark</option>
-              <option value='coffee'>Coffee</option>
-              <option value='nord'>Nord</option>
+              {getAvailableThemes().map(t => (
+                <option value={t.value}>{t.label}</option>
+              ))}
             </select>
           </SettingsFormField>
           <SettingsFormField label='Dashboard Layout' htmlFor='dashboardLayout' noMargin>

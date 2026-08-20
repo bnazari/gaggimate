@@ -1,6 +1,6 @@
 const THEME_STORAGE_KEY = 'gaggimate-daisyui-theme';
-const AVAILABLE_THEMES = ['system', 'light', 'dark', 'coffee', 'nord'];
-
+// const AVAILABLE_THEMES = ['system', 'light', 'dark', 'coffee', 'nord'];
+const AVAILABLE_THEMES = ['system', 'light', 'dark', 'coffee', 'nord', 'emerald'];
 const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 export function getSystemTheme() {
@@ -42,7 +42,7 @@ export function applyTheme(theme) {
 export function getAvailableThemes() {
   return AVAILABLE_THEMES.map(theme => ({
     value: theme,
-    label: theme.charAt(0).toUpperCase() + theme.slice(1),
+    label: theme === 'emerald' ? 'Rancilio' : theme.charAt(0).toUpperCase() + theme.slice(1),
   }));
 }
 

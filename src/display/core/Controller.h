@@ -234,6 +234,10 @@ class Controller {
     static const unsigned long BLUETOOTH_GRACE_PERIOD_MS = 1500; // 1.5 second grace period
     static const unsigned long CONTROLLER_WAITING_TIMEOUT_MS = 10000;
 
+    unsigned long brewBtnPressMs = 0; // momentary long-press (flush) tracking (this fork)
+    bool brewBtnLongFired = false;    // flush already triggered during this hold
+    void checkBrewButtonLongPress();  // polled: fires flush mid-hold at threshold
+
     // Mode status LEDs (channels 0=brew, 1=steam, 2=water): blink while the
     // boiler heats toward the mode's setpoint, solid once at temperature. (this fork)
     void updateModeLeds();

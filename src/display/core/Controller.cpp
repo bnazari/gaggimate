@@ -283,6 +283,28 @@ void Controller::setupBluetooth() {
             return;
         }
         if (behavior == "brew") {
+            // Momentary mode (this fork): distinguish tap from long press. The
+            // press edge is deferred to the release so a long press (>= threshold)
+            // can run a flush instead of the normal brew action. Latching switches
+            // keep the stock edge-driven behavior (a held rocker is not a "press").
+            if (settings.isMomentaryButtons()) {
+                if (status) {
+                    brewBtnPressMs = millis();
+                    brewBtnLongFired = false;
+                    return;
+                }
+                // Release. The flush fires mid-hold from checkBrewButtonLongPress();
+                // if it already did, the release is consumed. Otherwise it's a tap.
+                const bool fired = brewBtnLongFired;
+                brewBtnPressMs = 0;
+                brewBtnLongFired = false;
+                if (fired) {
+                    return;
+                }
+                handleBrewButton(1); // tap: normal press action on release
+                handleBrewButton(0); // no-op in momentary mode, keeps state sane
+                return;
+            }
             handleBrewButton(status);
             return;
         }
@@ -663,10 +685,28 @@ void Controller::loopControl() {
             lastPing = now;
         }
 
-        updateModeLeds(); // change-driven; sends only on state transitions
+        checkBrewButtonLongPress(); // fires flush at 2s while still held
+        updateModeLeds();           // change-driven; sends only on state transitions
 
         updateControl();
     }
+}
+
+void Controller::checkBrewButtonLongPress() {
+    constexpr unsigned long LONG_PRESS_MS = 2000;
+    if (brewBtnPressMs == 0 || brewBtnLongFired)
+        return;
+    if (millis() - brewBtnPressMs < LONG_PRESS_MS)
+        return;
+    brewBtnLongFired = true;
+    // Same sequence the dedicated "flush" button behavior uses.
+    if (getMode() == MODE_STANDBY) {
+        deactivateStandby();
+    }
+    if (getMode() != MODE_BREW && !isActive()) {
+        setMode(MODE_BREW);
+    }
+    onFlush();
 }
 
 void Controller::updateModeLeds() {
@@ -1176,6 +1216,12 @@ int Controller::getMode() const { return mode; }
 
 void Controller::setMode(int newMode) {
     Event modeEvent = pluginManager->trigger("controller:mode:change", "value", newMode);
+    // Leaving water mode stops a running pump (this fork). The brew button and
+    // web UI deactivate before switching, but the steam button and touch UI
+    // call setMode() directly and would leave the pump running into the new mode.
+    if (mode == MODE_WATER && modeEvent.getInt("value") != MODE_WATER && isActive()) {
+        deactivate();
+    }
     mode = modeEvent.getInt("value");
     steamReady = false;
 
@@ -1280,7 +1326,9 @@ void Controller::handleBrewButton(int brewButtonStatus) {
             }
             break;
         case MODE_WATER:
-            activate();
+            // Brew button leaves water mode instead of running the pump (this fork).
+            deactivate();
+            setMode(MODE_BREW);
             break;
         case MODE_STEAM:
             deactivate();
@@ -1319,6 +1367,10 @@ void Controller::handleWaterButton(int buttonStatus) {
         case MODE_WATER:
             if (!isActive()) {
                 activate();
+            } else if (settings.isMomentaryButtons()) {
+                // Momentary (this fork): press toggles the pump (same pattern as
+                // the brew button). Latching keeps stop-on-release below.
+                deactivate();
             }
             break;
         default:

@@ -47,6 +47,11 @@ void GaggiMateController::setup() {
     }
     this->brewBtn = new DigitalInput(_config.brewButtonPin, [this](const bool state) { _comms.sendButtonState(0, state); });
     this->steamBtn = new DigitalInput(_config.steamButtonPin, [this](const bool state) { _comms.sendButtonState(1, state); });
+    // Third switch input on the ext4 expansion pin (this fork), reported as
+    // button index 2 ("water" in the display's default button behavior
+    // mapping). Dry contact to GND; DigitalInput enables the internal pull-up
+    // and reports pressed = low.
+    this->waterBtn = new DigitalInput(_config.ext4Pin, [this](const bool state) { _comms.sendButtonState(2, state); });
 
     // 4-Pin peripheral port
     albaComms = new SoftWire(_config.sunriseSdaPin, _config.sunriseSclPin);
@@ -106,6 +111,7 @@ void GaggiMateController::setup() {
     }
     this->brewBtn->setup();
     this->steamBtn->setup();
+    this->waterBtn->setup();
 
     // Mode-status LED outputs (this fork, see header). Freed from the addon I2C
     // bus by the detectAddon() removal above; active high, series resistor to GND.

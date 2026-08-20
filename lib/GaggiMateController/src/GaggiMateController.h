@@ -48,6 +48,7 @@ class GaggiMateController {
     Pump *pump = nullptr;
     DigitalInput *brewBtn = nullptr;
     DigitalInput *steamBtn = nullptr;
+    DigitalInput *waterBtn = nullptr; // Silvia water rocker on ext4 (this fork)
     PressureSensor *pressureSensor = nullptr;
     LedController *ledController = nullptr;
     DistanceSensor *distanceSensor = nullptr;

@@ -17,7 +17,9 @@ constexpr size_t STATUS_PERIOD = 500;
 constexpr size_t DNS_PERIOD = 50;
 
 const String LOCAL_URL = "http://4.4.4.1/";
-const String RELEASE_URL = "https://github.com/jniebuhr/gaggimate/releases/";
+// OTA pulls from this fork's releases, tagged vX.Y.Z-bnazari — never a dot in
+// the suffix: from_string() drops everything past the third dot. (this fork)
+const String RELEASE_URL = "https://github.com/bnazari/gaggimate/releases/";
 
 class ProfileManager;
 

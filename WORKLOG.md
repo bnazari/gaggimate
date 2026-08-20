@@ -6,6 +6,67 @@ pending items. Maintained by Claude Code — see CLAUDE.md.
 
 ---
 
+## 2026-08-20 — OTA from the fork's own releases: RELEASE_URL repoint, CI trim, `-bnazari` tag scheme
+
+**Goal:** make the machine update from this fork instead of upstream (whose releases
+would wipe the fork). Supersedes the deferred self-hosted-OTA plan in the 8/19 entry —
+half of it evaporated in the `silvia` rebuild: current upstream `build.yml` already
+publishes the exact asset names `GitHubOTA` downloads (`display-firmware.bin`,
+`board-firmware.bin`), so no asset-name reconciliation was needed.
+
+**Changes:**
+1. `RELEASE_URL` (WebUIPlugin.h) → `https://github.com/bnazari/gaggimate/releases/`.
+2. `.github/workflows/build.yml` fork-fixed: `git tag -d nightly/db` made tolerant
+   (`|| true` — under `bash -e` a missing tag killed the job), the three
+   `upload-firmware` steps removed (they POST to upstream's private update server
+   with secrets the fork doesn't have; `curl --fail` would kill the job before the
+   release step), and the `display-headless` build dropped (unused here, ~1/3 of CI
+   time). `.github/actions/upload-firmware/` left in place to minimize merge friction.
+3. `build-nightly.yml` deleted — can never work on the fork (same secrets, rolling
+   `nightly` tag) and would fail noisily on any `master` push.
+4. New host test `pio test -e native_semver` (test/test_semver_ordering) pinning the
+   updater's version-ordering semantics; compiles vendored `semver.c` as C plus the
+   sim's Arduino-String shim so `semver_extensions.cpp` builds natively (needed
+   `noniso_extra.c` for itoa/utoa — host libc lacks them).
+
+**Tag scheme decision: `vX.Y.Z-bnazari`** (e.g. first release `v1.8.2-bnazari`).
+Major.minor tracks the upstream base (currently v1.8.1), patch is the fork's release
+counter, suffix is the visual marker. On rebase to a newer upstream, jump minor
+(e.g. `v1.9.1-bnazari`). Rules and rejected alternatives:
+- **Never a dot in the suffix** (`-bnazari.1` rejected): `from_string()` splits on '.'
+  and reads only the third field, so the counter after the dot is silently dropped —
+  `-bnazari.1` → `-bnazari.2` would compare equal and never offer an update. Test-pinned.
+- Plain `vX.Y.Z` (no suffix) rejected per user: fork tags must be visually distinct
+  from mainline. Suffix also guarantees zero name collisions with upstream tags.
+- Non-`v` prefixes rejected: `GitHubOTA::checkForUpdates()` hard-rejects tags not
+  starting with `v`.
+- Bonus over plain tags: a post-tag dev build (`v1.8.2-bnazari-5-g1234`) is NOT
+  offered its own base tag as a downgrade (prerelease string-compare works out) —
+  with plain tags it would be.
+- Vendored `semver.c` quirk, test-pinned: prerelease sorts ABOVE the plain version
+  (inverted vs the semver spec). Harmless here (patch counter decides first), but a
+  future lib swap that fixes it will trip the test and deserves a re-think.
+
+**Verification:** `pio test -e native_semver` 9/9 PASSED (parse of release tags /
+git-describe dev builds / non-semver guard, update ordering across dev→release,
+release→release, post-tag no-downgrade, rebase minor-jump, dotted-suffix hazard,
+prerelease-above-plain quirk). `pio run -e display` SUCCESS (the env that carries
+RELEASE_URL), `pio test -e native_autotune` 4/4 PASSED and `pio run -e display-sim`
+SUCCESS (regression after the platformio.ini env addition). CI workflow not yet
+exercised — first real proof is the first tag push.
+
+**Release flow (bootstrap):** USB-flash this build once (machine still runs
+upstream-pointing firmware) → push `silvia` → push tag `v1.8.2-bnazari` → Actions
+builds (incl. embedded WebUI) and publishes the release → System tab updates from
+then on. Channel must stay **latest** ("nightly" resolves to a rolling tag the fork
+never publishes). OTA cannot be sim-verified (compiled out); recovery path is USB.
+
+**Pending:** push needed (`silvia`, commit hash below) + first tag `v1.8.2-bnazari`
+after USB-flashing this build; then verify System tab sees and installs the release
+on hardware. Reminder: don't BLE-OTA against the C3 mock (8/17 note).
+
+---
+
 ## 2026-08-20 — History rebuilt: `silvia` branch, five thematic commits on current upstream
 
 **Context:** user wanted the fork's tangled 44-commit history redone from scratch.
@@ -66,8 +127,9 @@ before NimBLE frees remotes, or serialize scale access) — upstream-relevant; u
 to confirm Bookoo scale power state around the crash. Coredump + analysis preserved
 in session scratchpad.
 
-**Pending — self-hosted OTA (deferred by choice; USB flashing is the update path
-while the fork is changing fast):** the built-in updater is hardcoded to official
+**Pending — self-hosted OTA — DONE 2026-08-20, see the OTA entry above (plan
+changed: asset names already matched after the rebuild; tag scheme became
+`vX.Y.Z-bnazari`):** the built-in updater is hardcoded to official
 releases (`RELEASE_URL` in WebUIPlugin.h:20 → jniebuhr/gaggimate) and installing it
 would wipe the fork — the System-tab warning dialog exists for exactly that. To make
 the machine update from this fork instead:

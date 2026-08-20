@@ -27,6 +27,7 @@ pio run -e display-sim -t run            # build + launch (needs `brew install s
 
 # Tests (host-native, no hardware)
 pio test -e native_autotune              # SIMC autotune unit tests (Unity)
+pio test -e native_semver                # OTA version-ordering tests for the fork tag scheme (this fork)
 
 # Web UI (Preact + Vite + Tailwind/daisyUI, needs Node 22 — `nvm use`)
 cd web && npm run dev                    # dev server on :5173
@@ -121,6 +122,17 @@ until the scale hardware is actually installed. The delta on `silvia`:
 **Web UI** (`web/`): Rancilio logos replace the GaggiMate logo in `Navigation.jsx`, `emerald` added to allowed daisyUI themes, minor GeneralTab/style tweaks.
 
 **LVGL UI**: regenerated from `eez-ui/gaggimate.eez-project` with a Rancilio look + `ui_image_rancilio` boot logo (the huge eez image-file diffs are regeneration artifacts, not hand edits).
+
+**OTA / releases**: the built-in updater pulls from **this fork's** GitHub releases
+(`RELEASE_URL` in `WebUIPlugin.h`), not upstream. Release tags are **`vX.Y.Z-bnazari`**:
+major.minor tracks the upstream base, patch is the fork's release counter (bump minor past
+the base on an upstream rebase, e.g. `v1.9.1-bnazari`), and the suffix must **never contain
+a dot** — `from_string()` drops everything past the third dot-separated field, so a dotted
+counter would never trigger an update. Publishing: push a tag → `.github/workflows/build.yml`
+(fork-trimmed: tolerant tag deletes, no update-server uploads, no headless env;
+`build-nightly.yml` deleted) builds everything and attaches the release assets. Keep the
+update channel on **latest** — "nightly" points at a rolling tag the fork never publishes.
+Ordering semantics are pinned by `pio test -e native_semver` (`test/test_semver_ordering/`).
 
 **Fixes carried on `silvia`** (all verified on hardware; upstream-candidates for PR after CLA):
 - BLE bounce: ping-timeout link drop tracked in a dedicated `pingTimedOut` flag — gating on `errorState` bounced BLE every 250 ms whenever another error path overwrote TIMEOUT.

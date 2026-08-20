@@ -22,7 +22,10 @@ char albaSwRxBuffer[128];
 void GaggiMateController::setup() {
     delay(5000);
     detectBoard();
-    detectAddon();
+    // detectAddon() removed in this fork: ext2/ext3 (GPIO2/GPIO8) are repurposed
+    // as mode-status LED outputs below. This permanently drops gearpump/XL9555
+    // addon support on this board.
+    // detectAddon();
 
     this->thermocouple = new Max31855Thermocouple(
         _config.maxCsPin, _config.maxMisoPin, _config.maxSckPin, [this](float temperature) { /* noop */ },
@@ -57,8 +60,20 @@ void GaggiMateController::setup() {
     if (this->ledController->isAvailable()) {
         _config.capabilites.ledControls = true;
         _config.capabilites.tof = true;
-        _comms.onLedControl([this](uint8_t channel, uint8_t brightness) { ledController->setChannel(channel, brightness); });
     }
+    // Mode-status LEDs (this fork): channels 8-10 are intercepted locally and
+    // driven on the ext pins - 8 = brew (ext3 / GPIO8, J6 pin 6), 9 = steam
+    // (ext2 / GPIO2, pin 7), 10 = water (ext1 / GPIO1, pin 8). Brightness
+    // semantics: 0 = off, 255 = solid, anything else = blink (handled locally
+    // in loop()). Channels 0-7 still go to the Alba PCA9634 when that addon is
+    // present.
+    _comms.onLedControl([this](uint8_t channel, uint8_t brightness) {
+        if (channel >= 8 && channel < 11) {
+            modeLedState[channel - 8] = brightness;
+        } else if (_config.capabilites.ledControls) {
+            ledController->setChannel(channel, brightness);
+        }
+    });
 
     gm::DeviceCapabilities capabilities = gaggimate_Capabilities_init_zero;
     capabilities.dimming = _config.capabilites.dimming;
@@ -91,6 +106,15 @@ void GaggiMateController::setup() {
     }
     this->brewBtn->setup();
     this->steamBtn->setup();
+
+    // Mode-status LED outputs (this fork, see header). Freed from the addon I2C
+    // bus by the detectAddon() removal above; active high, series resistor to GND.
+    pinMode(_config.ext3Pin, OUTPUT); // brew
+    pinMode(_config.ext2Pin, OUTPUT); // steam
+    pinMode(_config.ext1Pin, OUTPUT); // water
+    digitalWrite(_config.ext3Pin, LOW);
+    digitalWrite(_config.ext2Pin, LOW);
+    digitalWrite(_config.ext1Pin, LOW);
     if (_config.capabilites.pressure) {
         this->adc->setup();
         pressureSensor->setup();
@@ -220,8 +244,24 @@ void GaggiMateController::setup() {
     ESP_LOGI(LOG_TAG, "Initialization done");
 }
 
+void GaggiMateController::updateModeLedOutputs() {
+    // 0=off, 255=solid, 128=slow blink (heating, 1Hz), 64=fast blink (over
+    // temp, 4Hz). Note: loop() ticks every 250ms, which exactly samples the
+    // 125ms fast half-period edge-to-edge; the visible fast rate is 2Hz on
+    // hardware unless the loop delay is reduced.
+    const unsigned long now = millis();
+    const uint8_t pins[3] = {_config.ext3Pin, _config.ext2Pin, _config.ext1Pin};
+    for (int i = 0; i < 3; i++) {
+        const uint8_t st = modeLedState[i];
+        const unsigned long half = st == 64 ? 125 : 500;
+        const bool on = st == 255 || (st != 0 && (now / half) % 2 == 0);
+        digitalWrite(pins[i], on ? HIGH : LOW);
+    }
+}
+
 void GaggiMateController::loop() {
     unsigned long now = millis();
+    updateModeLedOutputs();
     if (lastPingTime < now && (now - lastPingTime) / 1000 > PING_TIMEOUT_SECONDS) {
         handlePingTimeout();
     }

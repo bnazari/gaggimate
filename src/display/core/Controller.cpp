@@ -229,6 +229,11 @@ void Controller::setupBluetooth() {
             // Re-assert the connection interval for the fresh link (e.g. tight
             // again if we reconnected mid-shot).
             applyConnectionPriority(true);
+            // Invalidate the mode-LED cache so the next updateModeLeds() tick
+            // resends the full lamp state: the connect-time outbound-queue wipe
+            // can destroy an in-flight LED update, and a rebooted controller
+            // starts with all lamps off while this cache still claims otherwise.
+            lastLedState[0] = lastLedState[1] = lastLedState[2] = 1;
         } else if (initialized) {
             pluginManager->trigger("controller:bluetooth:disconnect");
             waitingForController = true;
@@ -658,7 +663,67 @@ void Controller::loopControl() {
             lastPing = now;
         }
 
+        updateModeLeds(); // change-driven; sends only on state transitions
+
         updateControl();
+    }
+}
+
+void Controller::updateModeLeds() {
+    constexpr uint8_t LED_OFF = 0, LED_BLINK_SLOW = 128, LED_BLINK_FAST = 64, LED_SOLID = 255;
+    uint8_t s[3] = {LED_OFF, LED_OFF, LED_OFF};
+    int active = -1;
+    switch (getMode()) {
+    case MODE_BREW:
+        active = 0;
+        break;
+    case MODE_STEAM:
+        active = 1;
+        break;
+    case MODE_WATER:
+        active = 2;
+        break;
+    default:
+        break; // standby: all off
+    }
+    if (active >= 0) {
+        const float target = getTargetTemp();
+        const float current = getCurrentTemp();
+        if (target > 0.0f) {
+            // Three thermal states with hysteresis so the LED doesn't flap:
+            //   BELOW (slow blink)  -> READY at target-1.5
+            //   READY (solid)       -> BELOW at target-3 (outside a shot)
+            //                       -> OVER  at target+3
+            //   OVER  (fast blink)  -> READY at target+1.5
+            switch (modeLedTherm) {
+            case 0: // below setpoint
+                if (current >= target - 1.5f)
+                    modeLedTherm = current > target + 3.0f ? 2 : 1;
+                break;
+            case 1: // at temperature
+                if (current > target + 3.0f)
+                    modeLedTherm = 2;
+                else if (current < target - 3.0f && !isActive())
+                    modeLedTherm = 0;
+                break;
+            default: // over temperature
+                if (current <= target + 1.5f)
+                    modeLedTherm = current < target - 3.0f ? 0 : 1;
+                break;
+            }
+            s[active] = modeLedTherm == 1 ? LED_SOLID : (modeLedTherm == 2 ? LED_BLINK_FAST : LED_BLINK_SLOW);
+        }
+    } else {
+        modeLedTherm = 0;
+    }
+    if (s[0] != lastLedState[0] || s[1] != lastLedState[1] || s[2] != lastLedState[2]) {
+        // Channels 8-10: outside the PCA9634 range (0-7) that the Sunrise/Alba
+        // LedControlPlugin drives, so the two features don't fight.
+        const LedChannelCommand ch[3] = {{8, s[0]}, {9, s[1]}, {10, s[2]}};
+        comms.sendLedControl(ch, 3);
+        lastLedState[0] = s[0];
+        lastLedState[1] = s[1];
+        lastLedState[2] = s[2];
     }
 }
 

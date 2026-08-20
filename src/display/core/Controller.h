@@ -234,6 +234,12 @@ class Controller {
     static const unsigned long BLUETOOTH_GRACE_PERIOD_MS = 1500; // 1.5 second grace period
     static const unsigned long CONTROLLER_WAITING_TIMEOUT_MS = 10000;
 
+    // Mode status LEDs (channels 0=brew, 1=steam, 2=water): blink while the
+    // boiler heats toward the mode's setpoint, solid once at temperature. (this fork)
+    void updateModeLeds();
+    uint8_t lastLedState[3] = {1, 1, 1}; // invalid sentinel forces initial send
+    uint8_t modeLedTherm = 0;            // 0=below setpoint, 1=at temp, 2=over temp
+
     xTaskHandle logicTaskHandle;
 
     static void loopLogicTask(void *arg);

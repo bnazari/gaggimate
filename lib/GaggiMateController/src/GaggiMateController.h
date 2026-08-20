@@ -54,6 +54,11 @@ class GaggiMateController {
     ADSAdc *adc = nullptr;
     FlowSensor *flowSensor = nullptr;
 
+    // Mode-status LEDs on ext3/ext2/ext1 (this fork): brightness state per
+    // channel 8-10, blink rendered locally in updateModeLedOutputs().
+    void updateModeLedOutputs();
+    uint8_t modeLedState[3] = {0, 0, 0};
+
     GearpumpAddon *gearpumpAddon = nullptr;
 
     SoftWire *albaComms = nullptr;

@@ -46,6 +46,13 @@ inline uint16_t coalescingKey(const gm::Payload &p) {
     case gaggimate_Payload_button_tag:
         index = p.content.button.index;
         break;
+    case gaggimate_Payload_led_tag:
+        // Two independent senders share this tag: the Sunrise/Alba plugin
+        // (channels 0-7) and the mode-status LEDs (channels 8+). Without a
+        // per-group key they collapse into one queue slot and silently destroy
+        // each other's change-driven (never retransmitted) updates. (this fork)
+        index = p.content.led.channels_count > 0 && p.content.led.channels[0].channel >= 8 ? 1 : 0;
+        break;
     default:
         index = 0;
         break;

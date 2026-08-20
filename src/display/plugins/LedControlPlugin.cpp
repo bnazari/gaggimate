@@ -6,10 +6,17 @@
 void LedControlPlugin::setup(Controller *controller, PluginManager *pluginManager) {
     this->controller = controller;
     pluginManager->on("controller:ready", [this](Event const) { initialized = true; });
+    pluginManager->on("controller:bluetooth:connect", [this](Event const &) { resync = true; });
 }
 
 void LedControlPlugin::loop() {
     if (!initialized) {
+        return;
+    }
+    // No PCA9634 on this controller -> channels 0-7 go nowhere. Skip the
+    // sends entirely instead of racing the mode-status LEDs for queue
+    // bandwidth with dead traffic. (this fork)
+    if (!controller->getSystemInfo().capabilities.ledControl) {
         return;
     }
     if (lastUpdate + UPDATE_INTERVAL < millis()) {
@@ -53,8 +60,9 @@ void LedControlPlugin::sendControl(String hexColor, uint8_t ext) {
 }
 
 void LedControlPlugin::sendControl(uint8_t r, uint8_t g, uint8_t b, uint8_t w, uint8_t ext) {
-    if (r == last_r && g == last_g && b == last_b && w == last_w && ext == last_ext)
+    if (!resync && r == last_r && g == last_g && b == last_b && w == last_w && ext == last_ext)
         return;
+    resync = false;
 
     // Send every channel as one snapshot. A single message keeps the outbound
     // coalescing queue from collapsing per-channel updates down to one channel.

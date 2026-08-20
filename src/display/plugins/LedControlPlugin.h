@@ -17,6 +17,10 @@ class LedControlPlugin : public Plugin {
 
     unsigned long lastUpdate = 0;
     bool initialized = false;
+    // Skip the change-cache once after every (re)connect: the connect-time
+    // outbound-queue wipe can eat an in-flight snapshot and a rebooted
+    // controller starts dark while the cache claims otherwise. (this fork)
+    bool resync = true;
 
     uint8_t last_r = -1;
     uint8_t last_g = -1;

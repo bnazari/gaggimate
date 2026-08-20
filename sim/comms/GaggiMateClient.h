@@ -102,7 +102,18 @@ class GaggiMateClient {
     void onTofMeasurement(TofCallback cb) { _tofCb = std::move(cb); }
     void onError(ErrorCallback cb) { _errorCb = std::move(cb); }
 
+    // --- Simulator machine panel hooks -------------------------------------
+    // The panel injects rocker edges exactly where real controller-board button
+    // reports would arrive, and reads the mock's physical state for the visual.
+    static GaggiMateClient *simInstance() { return _simInstance; }
+    void simInjectButton(uint8_t index, bool pressed) {
+        if (_buttonCb)
+            _buttonCb(index, pressed);
+    }
+    MockController &simMock() { return _mock; }
+
   private:
+    static GaggiMateClient *_simInstance;
     MockController _mock;
     NimBLEClient _nativeClient;
 

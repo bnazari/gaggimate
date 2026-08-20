@@ -43,6 +43,11 @@ void MockController::update() {
     const float gain = (dest - temperature) * (1.0f - expf(-dt / tau));
     temperature += gain;
 
+    // Venting steam through the open wand valve bleeds boiler heat. Only matters
+    // when the boiler is hot enough to produce steam.
+    if (wandValveOpen && temperature > 100.0f)
+        temperature -= 1.5f * dt;
+
     // The pump is "active" when the display asks for any drive.
     const bool pumpActive = pumpPower > 1.0f || targetPressure > 0.1f || targetFlow > 0.1f;
     float pDest = 0.0f, fDest = 0.0f;

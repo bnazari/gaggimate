@@ -4,6 +4,7 @@
 // are no-ops in the simulator.
 #include "ESPAsyncWebServer.h"
 #include "SdlDriver.h"
+#include "machine/MachinePanel.h"
 #include <Arduino.h>
 #include <cstdlib>
 #include <cstring>
@@ -14,6 +15,36 @@
 // The generated UI event handlers reference this global (see main.h on device).
 Controller controller;
 
+// Scripted panel input for headless runs: `--script b@1500,s@3000,v@4000`
+// feeds the machine panel the given key at the given ms after start.
+struct ScriptEvent {
+    SDL_Keycode key;
+    unsigned long atMs;
+    unsigned long holdMs = 0; // 0 = default tap
+    bool fired = false;
+};
+static ScriptEvent s_script[32];
+static int s_scriptLen = 0;
+
+static void parseScript(const char *arg) {
+    const char *p = arg;
+    while (*p && s_scriptLen < 32) {
+        const char key = *p++;
+        if (*p == '@') {
+            p++;
+            const unsigned long at = strtoul(p, (char **)&p, 10);
+            unsigned long hold = 0;
+            if (*p == ':') {
+                p++;
+                hold = strtoul(p, (char **)&p, 10);
+            }
+            s_script[s_scriptLen++] = {(SDL_Keycode)key, at, hold};
+        }
+        if (*p == ',')
+            p++;
+    }
+}
+
 int main(int argc, char **argv) {
     // Optional: `--screenshot <path> [delayMs]` renders for a bit, saves a BMP, exits.
     const char *shotPath = nullptr;
@@ -23,6 +54,8 @@ int main(int argc, char **argv) {
             shotPath = argv[++i];
             if (i + 1 < argc)
                 shotDelayMs = strtoul(argv[i + 1], nullptr, 10);
+        } else if (strcmp(argv[i], "--script") == 0 && i + 1 < argc) {
+            parseScript(argv[++i]);
         }
     }
 
@@ -71,6 +104,13 @@ int main(int argc, char **argv) {
             if (millis() - lastSave >= 2000) {
                 lastSave = millis();
                 controller.getSettings().save(true);
+            }
+        }
+
+        for (int i = 0; i < s_scriptLen; i++) {
+            if (!s_script[i].fired && millis() - start >= s_script[i].atMs) {
+                s_script[i].fired = true;
+                MachinePanel::getInstance()->tap(s_script[i].key, s_script[i].holdMs);
             }
         }
 

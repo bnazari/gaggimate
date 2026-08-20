@@ -61,9 +61,10 @@ builds (incl. embedded WebUI) and publishes the release → System tab updates f
 then on. Channel must stay **latest** ("nightly" resolves to a rolling tag the fork
 never publishes). OTA cannot be sim-verified (compiled out); recovery path is USB.
 
-**Pending:** push needed (`silvia`, commit hash below) + first tag `v1.8.2-bnazari`
-after USB-flashing this build; then verify System tab sees and installs the release
-on hardware. Reminder: don't BLE-OTA against the C3 mock (8/17 note).
+**Pending:** ~~push needed~~ (pushed via CLI at user's request, 96a202bc) — remaining:
+first tag `v1.8.2-bnazari` after USB-flashing this build, watch the Actions run (CI
+untested), then verify the System tab sees and installs the release on hardware.
+Reminder: don't BLE-OTA against the C3 mock (8/17 note).
 
 ---
 

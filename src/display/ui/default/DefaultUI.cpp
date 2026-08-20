@@ -285,6 +285,22 @@ void DefaultUI::loop() {
     }
 
     ui_tick();
+    // LVGL 8 imgbtn repaints on touch events but NOT on programmatic state
+    // changes when no style property differs between states -- so the play/
+    // pause buttons driven by ui_flags via tick_screen_*() never repainted on
+    // partial-refresh panels (the sim's SDL full-frame redraw masked it).
+    // Invalidate them whenever their checked state flips. (this fork)
+    auto invalidateOnCheckedChange = [](lv_obj_t *btn, bool &last) {
+        if (btn == nullptr)
+            return;
+        const bool checked = lv_obj_has_state(btn, LV_STATE_CHECKED);
+        if (checked != last) {
+            last = checked;
+            lv_obj_invalidate(btn);
+        }
+    };
+    invalidateOnCheckedChange(objects.water_start_button, waterBtnChecked);
+    invalidateOnCheckedChange(objects.grind_start_button, grindBtnChecked);
     lv_task_handler();
 }
 

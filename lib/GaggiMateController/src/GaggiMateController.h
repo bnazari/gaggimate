@@ -68,6 +68,9 @@ class GaggiMateController {
 
     String _version;
     unsigned long lastPingTime = 0;
+    // True after the ping-timeout link drop has fired; cleared on the next ping.
+    // Separate from errorState so other error paths can't retrigger the drop (this fork).
+    bool pingTimedOut = false;
     size_t errorState = ERROR_CODE_NONE;
 
     const char *LOG_TAG = "GaggiMateController";

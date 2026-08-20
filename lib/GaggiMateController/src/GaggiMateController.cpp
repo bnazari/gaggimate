@@ -331,6 +331,7 @@ void GaggiMateController::handlePing() {
     if (errorState == ERROR_CODE_TIMEOUT) {
         errorState = ERROR_CODE_NONE;
     }
+    pingTimedOut = false;
     lastPingTime = millis();
     ESP_LOGV(LOG_TAG, "Ping received, system is alive");
 }
@@ -347,8 +348,13 @@ void GaggiMateController::handlePingTimeout() {
     // the link layer. The display's existing disconnect path then rebuilds
     // the link and re-sends control state. loop() re-enters every 250 ms while
     // timed out -- guard so we don't repeatedly bounce the connection or spam
-    // the log.
-    if (errorState != ERROR_CODE_TIMEOUT) {
+    // the log. The transition is tracked in its own flag (this fork): gating on
+    // errorState broke whenever another error path (e.g. thermal runaway with a
+    // disconnected thermocouple, re-asserted every loop) overwrote TIMEOUT
+    // between iterations -- the "transition" then fired every 250 ms, bouncing
+    // BLE forever and making it impossible for a display to ever connect.
+    if (!pingTimedOut) {
+        pingTimedOut = true;
         ESP_LOGE(LOG_TAG, "Ping timeout detected. Turning off heater and pump for safety.");
         if (!_comms.isUpdating())
             _comms.disconnect();

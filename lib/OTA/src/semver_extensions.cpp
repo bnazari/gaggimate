@@ -25,6 +25,12 @@ semver_t from_string(const string &version) {
         return {0, 0, 0, nullptr, nullptr};
     }
     auto numbers = split(version, '.');
+    // Non-semver input (e.g. a dev build reporting "dev") must not throw:
+    // .at() past the end aborts the firmware, boot-looping the display on
+    // every BLE reconnect. Treat it as 0.0.0 instead. (this fork)
+    if (numbers.size() < 3) {
+        return {0, 0, 0, nullptr, nullptr};
+    }
     auto major = atoi(numbers.at(0).c_str());
     auto minor = atoi(numbers.at(1).c_str());
     int patch;
